@@ -1,0 +1,62 @@
+"use client";
+
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+
+import { formatNumber } from "@/lib/utils";
+
+const axis = { stroke: "var(--muted-foreground)", fontSize: 11, tickLine: false, axisLine: false } as const;
+
+function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payload?: { value: number }[]; label?: string; unit: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/60 bg-popover px-3 py-2 text-xs shadow-lg">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="text-sm font-bold tabular">
+        {formatNumber(payload[0].value, 1)} {unit}
+      </div>
+    </div>
+  );
+}
+
+export function TrendChart({ data, unit, height = 200 }: { data: { label: string; value: number }[]; unit: string; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+        <defs>
+          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" {...axis} minTickGap={24} />
+        <YAxis {...axis} width={44} domain={["dataMin - 5", "auto"]} tickFormatter={(v) => formatNumber(v)} />
+        <Tooltip content={<ChartTooltip unit={unit} />} cursor={{ stroke: "var(--border)" }} />
+        <Area
+          type="monotone"
+          dataKey="value"
+          stroke="var(--chart-1)"
+          strokeWidth={2.5}
+          fill="url(#trendFill)"
+          dot={{ r: 3, fill: "var(--chart-1)", strokeWidth: 0 }}
+          activeDot={{ r: 5 }}
+          isAnimationActive={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function VolumeChart({ data, unit, height = 200 }: { data: { label: string; volume: number }[]; unit: string; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+        <CartesianGrid vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" {...axis} minTickGap={8} />
+        <YAxis {...axis} width={44} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+        <Tooltip content={<ChartTooltip unit={unit} />} cursor={{ fill: "var(--accent)", opacity: 0.5 }} />
+        <Bar dataKey="volume" fill="var(--chart-1)" radius={[6, 6, 2, 2]} maxBarSize={28} isAnimationActive={false} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}

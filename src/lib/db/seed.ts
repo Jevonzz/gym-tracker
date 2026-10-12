@@ -1,0 +1,53 @@
+import type { Equipment, MuscleGroup } from "./types";
+
+export const SEED_EXERCISES: [string, MuscleGroup, Equipment][] = [
+  ["Bench Press", "Chest", "Barbell"],
+  ["Incline Bench Press", "Chest", "Barbell"],
+  ["Dumbbell Bench Press", "Chest", "Dumbbell"],
+  ["Incline Dumbbell Press", "Chest", "Dumbbell"],
+  ["Chest Fly", "Chest", "Cable"],
+  ["Push-up", "Chest", "Bodyweight"],
+  ["Dips", "Chest", "Bodyweight"],
+  ["Deadlift", "Back", "Barbell"],
+  ["Barbell Row", "Back", "Barbell"],
+  ["Pull-up", "Back", "Bodyweight"],
+  ["Chin-up", "Back", "Bodyweight"],
+  ["Lat Pulldown", "Back", "Cable"],
+  ["Seated Cable Row", "Back", "Cable"],
+  ["Dumbbell Row", "Back", "Dumbbell"],
+  ["T-Bar Row", "Back", "Machine"],
+  ["Back Squat", "Legs", "Barbell"],
+  ["Front Squat", "Legs", "Barbell"],
+  ["Romanian Deadlift", "Legs", "Barbell"],
+  ["Leg Press", "Legs", "Machine"],
+  ["Bulgarian Split Squat", "Legs", "Dumbbell"],
+  ["Walking Lunge", "Legs", "Dumbbell"],
+  ["Leg Extension", "Legs", "Machine"],
+  ["Leg Curl", "Legs", "Machine"],
+  ["Hip Thrust", "Legs", "Barbell"],
+  ["Calf Raise", "Legs", "Machine"],
+  ["Overhead Press", "Shoulders", "Barbell"],
+  ["Dumbbell Shoulder Press", "Shoulders", "Dumbbell"],
+  ["Lateral Raise", "Shoulders", "Dumbbell"],
+  ["Rear Delt Fly", "Shoulders", "Dumbbell"],
+  ["Face Pull", "Shoulders", "Cable"],
+  ["Barbell Curl", "Arms", "Barbell"],
+  ["Dumbbell Curl", "Arms", "Dumbbell"],
+  ["Hammer Curl", "Arms", "Dumbbell"],
+  ["Triceps Pushdown", "Arms", "Cable"],
+  ["Skull Crusher", "Arms", "Barbell"],
+  ["Overhead Triceps Extension", "Arms", "Cable"],
+  ["Plank", "Core", "Bodyweight"],
+  ["Hanging Leg Raise", "Core", "Bodyweight"],
+  ["Cable Crunch", "Core", "Cable"],
+  ["Ab Wheel Rollout", "Core", "Other"],
+  ["Kettlebell Swing", "Full body", "Kettlebell"],
+  ["Clean and Press", "Full body", "Barbell"],
+  ["Rowing Machine", "Cardio", "Machine"],
+  ["Treadmill Run", "Cardio", "Machine"],
+];
+
+/** Stable id so re-seeding never duplicates built-in exercises. */
+export function seedId(name: string) {
+  return "ex_" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+}
