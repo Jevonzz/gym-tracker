@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChartLine, Dumbbell, History, House, Library } from "lucide-react";
+import { ChartLine, Dumbbell, History, House, Scale } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useActiveWorkout } from "@/hooks/use-data";
 
 const items = [
   { href: "/", label: "Home", icon: House },
-  { href: "/history", label: "History", icon: History },
+  { href: "/bulk", label: "Bulk", icon: Scale },
   { href: "/workout", label: "Workout", icon: Dumbbell, center: true },
-  { href: "/exercises", label: "Exercises", icon: Library },
-  { href: "/progress", label: "Progress", icon: ChartLine },
+  { href: "/history", label: "History", icon: History },
+  { href: "/progress", label: "Progress", icon: ChartLine, also: ["/exercises"] },
 ];
 
 export function BottomNav() {
@@ -22,8 +22,8 @@ export function BottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
       <div className="mx-auto grid h-[4.25rem] max-w-lg grid-cols-5 items-center px-2">
-        {items.map(({ href, label, icon: Icon, center }) => {
-          const selected = href === "/" ? pathname === "/" : pathname.startsWith(href);
+        {items.map(({ href, label, icon: Icon, center, also }) => {
+          const selected = href === "/" ? pathname === "/" : [href, ...(also ?? [])].some((p) => pathname.startsWith(p));
           if (center) {
             return (
               <Link key={href} href={href} className="flex flex-col items-center justify-center" aria-label={label}>
