@@ -170,7 +170,7 @@ function ActiveBanner({ startedAt, name }: { startedAt: number; name: string }) 
 
 function BulkBanner() {
   const bulk = useBulkOverview();
-  const { goalWeight, unit, proteinTarget } = useSettings();
+  const { goalWeight, unit } = useSettings();
   if (!bulk) return null;
   const current = bulk.currentWeight;
   const toGo = current == null || goalWeight == null ? null : goalWeight - current;
@@ -192,7 +192,7 @@ function BulkBanner() {
         </div>
       </div>
       <div className="text-right text-xs text-muted-foreground tabular">
-        {formatNumber(bulk.today.totalProtein)} / {formatNumber(proteinTarget)} g
+        {formatNumber(bulk.today.totalProtein)} / {formatNumber(bulk.targets.protein)} g
         <br />
         {bulk.today.totalKcal > 0 ? `${formatNumber(bulk.today.totalKcal)} kcal` : `${formatNumber(bulk.today.gainer, 1)} gainer`}
       </div>

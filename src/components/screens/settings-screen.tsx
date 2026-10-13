@@ -22,13 +22,15 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { useSettings } from "@/hooks/use-data";
+import { useBulkOverview, useSettings } from "@/hooks/use-data";
 import { exportData, importData, loadDemoData, resetAllData, updateSettings } from "@/lib/db/repo";
 import type { BackupFile, Unit } from "@/lib/db/types";
 
 export function SettingsScreen() {
   const router = useRouter();
   const settings = useSettings();
+  const targets = useBulkOverview()?.targets;
+  const auto = settings.autoTargets && targets?.auto;
   const { theme, setTheme } = useTheme();
   const mounted = React.useSyncExternalStore(
     noop,
@@ -105,18 +107,33 @@ export function SettingsScreen() {
             onClear={() => updateSettings({ goalWeight: null })}
           />
         </Row>
-        <Row label="Daily protein target" hint="grams">
-          <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
+        <Row label="Auto targets" hint="Calories and protein from your bodyweight and goal">
+          <Switch checked={settings.autoTargets} onCheckedChange={(autoTargets) => updateSettings({ autoTargets })} />
         </Row>
-        <Row label="Daily calorie target" hint="kcal, leave empty for none">
-          <NumberField
-            value={settings.calorieTarget}
-            step={50}
-            placeholder="None"
-            onCommit={(calorieTarget) => updateSettings({ calorieTarget })}
-            onClear={() => updateSettings({ calorieTarget: null })}
-          />
-        </Row>
+        {auto ? (
+          <Row label="Daily targets" hint="Updates as your weight changes">
+            <span className="text-right text-sm font-semibold tabular">
+              {targets.kcal == null ? "" : `${targets.kcal.toLocaleString()} kcal`}
+              <br />
+              {targets.protein} g protein
+            </span>
+          </Row>
+        ) : (
+          <>
+            <Row label="Daily protein target" hint={settings.autoTargets ? "grams, until your first weigh-in" : "grams"}>
+              <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
+            </Row>
+            <Row label="Daily calorie target" hint="kcal, leave empty for none">
+              <NumberField
+                value={settings.calorieTarget}
+                step={50}
+                placeholder="None"
+                onCommit={(calorieTarget) => updateSettings({ calorieTarget })}
+                onClear={() => updateSettings({ calorieTarget: null })}
+              />
+            </Row>
+          </>
+        )}
         <Row label="Gainer calories" hint="kcal per serving">
           <NumberField
             value={settings.gainerKcal || null}

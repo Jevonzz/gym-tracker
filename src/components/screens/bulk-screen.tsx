@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { BodyweightChart } from "@/components/charts";
 import { useBulkOverview, useFoods, useSettings } from "@/hooks/use-data";
-import type { BulkDay, BulkOverview } from "@/lib/db/queries";
+import { autoTargets, type BulkDay, type BulkOverview, type DailyTargets } from "@/lib/db/queries";
 import { addIntake, deleteDailyLog, deleteFood, deleteFoodEntry, logFood, saveFood, updateDailyLog, updateSettings } from "@/lib/db/repo";
 import type { FoodEntry, Settings } from "@/lib/db/types";
 import { cn, formatNumber, parseDayKey } from "@/lib/utils";
@@ -46,10 +46,11 @@ export function BulkScreen() {
           <TodayCard
             day={overview.today}
             settings={settings}
+            targets={overview.targets}
             onEdit={() => setEditing(overview.today)}
             onAddFood={() => setAddingFoodFor(overview.today.date)}
           />
-          <WeekCard week={overview.week} settings={settings} onEdit={setEditing} />
+          <WeekCard week={overview.week} proteinTarget={overview.targets.protein} onEdit={setEditing} />
           <TrendCard overview={overview} settings={settings} />
           <HistoryList history={overview.history} settings={settings} onEdit={setEditing} />
         </>
@@ -151,8 +152,21 @@ function GoalCard({ overview, settings, onSetGoal }: { overview: BulkOverview; s
   );
 }
 
-function TodayCard({ day, settings, onEdit, onAddFood }: { day: BulkDay; settings: Settings; onEdit: () => void; onAddFood: () => void }) {
-  const { unit, proteinTarget, gainerTarget, calorieTarget } = settings;
+function TodayCard({
+  day,
+  settings,
+  targets,
+  onEdit,
+  onAddFood,
+}: {
+  day: BulkDay;
+  settings: Settings;
+  targets: DailyTargets;
+  onEdit: () => void;
+  onAddFood: () => void;
+}) {
+  const { unit, gainerTarget } = settings;
+  const { protein: proteinTarget, kcal: calorieTarget } = targets;
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
@@ -197,6 +211,11 @@ function TodayCard({ day, settings, onEdit, onAddFood }: { day: BulkDay; setting
           progress={day.gainer / gainerTarget}
         />
       </div>
+      {targets.auto && (
+        <p className="text-[11px] text-muted-foreground">
+          Targets worked out from your bodyweight{settings.goalWeight == null ? "" : " and goal"}. Change this in Settings.
+        </p>
+      )}
       <Button className="w-full" onClick={onAddFood}>
         <Utensils /> Add food
       </Button>
@@ -278,7 +297,7 @@ function Tile({
   );
 }
 
-function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Settings; onEdit: (d: BulkDay) => void }) {
+function WeekCard({ week, proteinTarget, onEdit }: { week: BulkDay[]; proteinTarget: number; onEdit: (d: BulkDay) => void }) {
   const trainingDays = week.filter((d) => d.isTrainingDay).length;
   const avgProtein = week.reduce((a, d) => a + d.totalProtein, 0) / week.length;
   const avgKcal = week.reduce((a, d) => a + d.totalKcal, 0) / week.length;
@@ -301,8 +320,8 @@ function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Setti
                 {date.getDate()}
               </span>
               <span
-                className={cn("size-1.5 rounded-full bg-transparent", d.totalProtein >= settings.proteinTarget && "bg-chart-2")}
-                aria-label={d.totalProtein >= settings.proteinTarget ? "Protein target hit" : undefined}
+                className={cn("size-1.5 rounded-full bg-transparent", d.totalProtein >= proteinTarget && "bg-chart-2")}
+                aria-label={d.totalProtein >= proteinTarget ? "Protein target hit" : undefined}
               />
             </button>
           );
@@ -518,9 +537,12 @@ function GoalEditor({
 function GoalForm({ settings, suggested, onDone }: { settings: Settings; suggested: number | null; onDone: () => void }) {
   const [goal, setGoal] = React.useState(settings.goalWeight == null ? "" : String(settings.goalWeight));
 
+  const g = parseFloat(goal.replace(",", "."));
+  const parsed = Number.isFinite(g) && g > 0 ? Math.round(g * 10) / 10 : null;
+  const preview = settings.autoTargets && suggested != null ? autoTargets(suggested, parsed, settings.unit) : null;
+
   async function save() {
-    const g = parseFloat(goal.replace(",", "."));
-    await updateSettings({ goalWeight: Number.isFinite(g) && g > 0 ? Math.round(g * 10) / 10 : null });
+    await updateSettings({ goalWeight: parsed });
     onDone();
   }
 
@@ -540,6 +562,12 @@ function GoalForm({ settings, suggested, onDone }: { settings: Settings; suggest
           onChange={(e) => setGoal(e.target.value)}
           className="h-12 text-lg"
         />
+        {preview && (
+          <p className="pt-1 text-sm text-muted-foreground tabular">
+            Daily target: <span className="font-semibold text-foreground">{formatNumber(preview.kcal)} kcal</span> and{" "}
+            <span className="font-semibold text-foreground">{formatNumber(preview.protein)} g protein</span>
+          </p>
+        )}
       </div>
       <DrawerFooter className="flex-row">
         {settings.goalWeight != null && (

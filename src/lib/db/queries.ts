@@ -285,6 +285,30 @@ export interface BulkOverview {
   ratePerWeek: number | null;
   /** Days with something logged (or a workout), newest first */
   history: BulkDay[];
+  /** The daily targets in effect: worked out from bodyweight when auto targets are on, else the fixed settings */
+  targets: DailyTargets;
+}
+
+export interface DailyTargets {
+  /** grams */
+  protein: number;
+  kcal: number | null;
+  /** True when the numbers were worked out from bodyweight and goal */
+  auto: boolean;
+}
+
+const LB = 0.45359237;
+
+/**
+ * Daily targets from bodyweight alone: protein at 2 g per kg, maintenance at about 33 kcal per kg
+ * (moderately active), plus a lean-bulk surplus of 350 kcal when the goal is above you or a
+ * 450 kcal deficit when it is below. Rough by design; the weekly rate shows whether to adjust.
+ */
+export function autoTargets(weight: number, goal: number | null, unit: Settings["unit"]): { protein: number; kcal: number } {
+  const kg = unit === "lb" ? weight * LB : weight;
+  const margin = unit === "lb" ? 1 : 0.5;
+  const adjust = goal == null ? 0 : goal > weight + margin ? 350 : goal < weight - margin ? -450 : 0;
+  return { protein: Math.round((kg * 2) / 5) * 5, kcal: Math.round((kg * 33 + adjust) / 50) * 50 };
 }
 
 export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview> {
@@ -294,7 +318,8 @@ export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview
     db.foodEntries.toArray(),
     db.kv.get("settings"),
   ]);
-  const { gainerKcal, gainerProtein } = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
+  const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
+  const { gainerKcal, gainerProtein } = settings;
   const entriesByDay = new Map<string, FoodEntry[]>();
   for (const e of entries.sort((a, b) => a.createdAt - b.createdAt)) {
     entriesByDay.set(e.date, [...(entriesByDay.get(e.date) ?? []), e]);
@@ -340,15 +365,22 @@ export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview
     .reverse()
     .map(dayView);
 
+  const currentWeight = weighIns.at(-1)?.avg ?? null;
+  const targets: DailyTargets =
+    settings.autoTargets && currentWeight != null
+      ? { ...autoTargets(currentWeight, settings.goalWeight, settings.unit), auto: true }
+      : { protein: settings.proteinTarget, kcal: settings.calorieTarget, auto: false };
+
   return {
     today: dayView(todayKey),
     week: Array.from({ length: 7 }, (_, i) => dayView(addDays(todayKey, i - 6))),
     weighIns,
     startWeight: weighIns[0]?.weight ?? null,
-    currentWeight: weighIns.at(-1)?.avg ?? null,
+    currentWeight,
     latestWeight: weighIns.at(-1)?.weight ?? null,
     ratePerWeek: weeklyRate(weighIns.filter((w) => w.date >= addDays(todayKey, -27))),
     history,
+    targets,
   };
 }
 
