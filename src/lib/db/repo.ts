@@ -54,6 +54,32 @@ export async function updateSettings(patch: Partial<Settings>) {
   await db.kv.put({ key: "settings", value: { ...current, ...patch } });
 }
 
+const KG_PER_LB = 0.45359237;
+
+/** Switches kg/lb and converts every stored weight (sets, weigh-ins, goal) so the numbers stay true. */
+export async function changeUnit(unit: Settings["unit"]) {
+  const settings = await getSettings();
+  if (settings.unit === unit) return;
+  const factor = unit === "lb" ? 1 / KG_PER_LB : KG_PER_LB;
+  const convert = (w: number) => Math.round(w * factor * 100) / 100;
+  await db.transaction("rw", [db.sets, db.dailyLogs, db.kv], async () => {
+    await db.sets
+      .filter((s) => !!s.weight)
+      .modify((s) => {
+        s.weight = convert(s.weight!);
+      });
+    await db.dailyLogs
+      .filter((l) => !!l.weight)
+      .modify((l) => {
+        l.weight = convert(l.weight!);
+      });
+    await db.kv.put({
+      key: "settings",
+      value: { ...settings, unit, goalWeight: settings.goalWeight == null ? null : convert(settings.goalWeight) },
+    });
+  });
+}
+
 /* ---------------------------------- workouts --------------------------------- */
 
 function defaultWorkoutName(date = new Date()) {
@@ -133,6 +159,67 @@ export async function addSet(workoutExerciseId: string) {
   });
 }
 
+/** Adds a set to an exercise in a finished workout, copying the last set. */
+export async function addLoggedSet(workoutExerciseId: string) {
+  const we = await db.workoutExercises.get(workoutExerciseId);
+  if (!we) return;
+  const sets = await db.sets.where("workoutExerciseId").equals(workoutExerciseId).sortBy("position");
+  const last = sets.at(-1);
+  await db.sets.add({
+    id: uid(),
+    workoutId: we.workoutId,
+    workoutExerciseId,
+    exerciseId: we.exerciseId,
+    position: (last?.position ?? -1) + 1,
+    weight: last?.weight ?? 0,
+    reps: last?.reps ?? 1,
+    completed: true,
+    completedAt: (last?.completedAt ?? Date.now()) + 1,
+  });
+}
+
+/**
+ * Re-flags personal records for an exercise in the order the sets were done,
+ * after a past workout was edited. Same rules as `toggleSetComplete`.
+ */
+export async function recomputePRs(exerciseId: string) {
+  await db.transaction("rw", db.sets, async () => {
+    const sets = await db.sets
+      .where("exerciseId")
+      .equals(exerciseId)
+      .filter((s) => s.completed)
+      .toArray();
+    sets.sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
+    const best = { weighted: 0, bodyweight: 0, seenWeighted: false, seenBodyweight: false };
+    for (const s of sets) {
+      let isPR: boolean;
+      if (s.weight) {
+        const score = e1rm(s.weight, s.reps ?? 0);
+        isPR = best.seenWeighted && score > best.weighted;
+        best.weighted = Math.max(best.weighted, score);
+        best.seenWeighted = true;
+      } else {
+        const score = s.reps ?? 0;
+        isPR = best.seenBodyweight && score > best.bodyweight;
+        best.bodyweight = Math.max(best.bodyweight, score);
+        best.seenBodyweight = true;
+      }
+      if (!!s.isPR !== isPR) await db.sets.update(s.id, { isPR });
+    }
+  });
+}
+
+/** Removes a set from a finished workout, and the exercise too if it was its last set. */
+export async function removeLoggedSet(id: string) {
+  await db.transaction("rw", [db.sets, db.workoutExercises], async () => {
+    const set = await db.sets.get(id);
+    if (!set) return;
+    await db.sets.delete(id);
+    const left = await db.sets.where("workoutExerciseId").equals(set.workoutExerciseId).count();
+    if (left === 0) await db.workoutExercises.delete(set.workoutExerciseId);
+  });
+}
+
 export async function updateSet(id: string, patch: Partial<Pick<SetEntry, "weight" | "reps">>) {
   await db.sets.update(id, patch);
 }
@@ -141,7 +228,7 @@ export async function removeSet(id: string) {
   await db.sets.delete(id);
 }
 
-/** Toggles a set; returns whether it is a new personal record (by estimated 1RM). */
+/** Toggles a set; returns whether it is a new personal record (estimated 1RM, or reps for bodyweight sets). */
 export async function toggleSetComplete(id: string): Promise<{ completed: boolean; isPR: boolean }> {
   const set = await db.sets.get(id);
   if (!set) return { completed: false, isPR: false };
@@ -149,14 +236,16 @@ export async function toggleSetComplete(id: string): Promise<{ completed: boolea
     await db.sets.update(id, { completed: false, completedAt: null, isPR: false });
     return { completed: false, isPR: false };
   }
-  const score = e1rm(set.weight ?? 0, set.reps ?? 0);
+  // Weighted sets compete on estimated 1RM; bodyweight sets (no added weight) compete on reps.
+  const bodyweight = !set.weight;
+  const score = (s: SetEntry) => (bodyweight ? (s.reps ?? 0) : e1rm(s.weight ?? 0, s.reps ?? 0));
   const others = await db.sets
     .where("exerciseId")
     .equals(set.exerciseId)
-    .filter((s) => s.completed && s.id !== id)
+    .filter((s) => s.completed && s.id !== id && !s.weight === bodyweight)
     .toArray();
-  const best = others.reduce((m, s) => Math.max(m, e1rm(s.weight ?? 0, s.reps ?? 0)), 0);
-  const isPR = score > 0 && others.length > 0 && score > best;
+  const best = others.reduce((m, s) => Math.max(m, score(s)), 0);
+  const isPR = score(set) > 0 && others.length > 0 && score(set) > best;
   await db.sets.update(id, { completed: true, completedAt: Date.now(), isPR });
   return { completed: true, isPR };
 }
@@ -190,11 +279,13 @@ export async function finishWorkout(id: string) {
 }
 
 export async function deleteWorkout(id: string) {
+  const exerciseIds = new Set((await db.sets.where("workoutId").equals(id).toArray()).map((s) => s.exerciseId));
   await db.transaction("rw", [db.workouts, db.workoutExercises, db.sets], async () => {
     await db.sets.where("workoutId").equals(id).delete();
     await db.workoutExercises.where("workoutId").equals(id).delete();
     await db.workouts.delete(id);
   });
+  for (const exerciseId of exerciseIds) await recomputePRs(exerciseId);
 }
 
 /* ---------------------------------- exercises -------------------------------- */
@@ -262,10 +353,19 @@ export async function deleteDailyLog(date: string) {
 
 export type FoodInput = Pick<Food, "name" | "kcal" | "protein">;
 
+/** Saves a food to My foods. A food with the same name (ignoring case) is updated instead of duplicated. */
 export async function saveFood(input: FoodInput) {
-  const id = uid();
-  await db.foods.add({ id, name: input.name.trim(), kcal: input.kcal, protein: input.protein, createdAt: Date.now() });
-  return id;
+  const name = input.name.trim();
+  return db.transaction("rw", db.foods, async () => {
+    const existing = await db.foods.filter((f) => f.name.trim().toLowerCase() === name.toLowerCase()).first();
+    if (existing) {
+      await db.foods.update(existing.id, { kcal: input.kcal, protein: input.protein });
+      return existing.id;
+    }
+    const id = uid();
+    await db.foods.add({ id, name, kcal: input.kcal, protein: input.protein, createdAt: Date.now() });
+    return id;
+  });
 }
 
 export async function deleteFood(id: string) {
@@ -403,9 +503,11 @@ export async function loadDemoData() {
       const weight = base === 0 ? 0 : Math.round((base + progress * base * 0.035) / 2.5) * 2.5;
       for (let s = 0; s < 3; s++) {
         const r = Math.max(1, reps + (progress % 2) - (s === 2 ? 1 : 0));
+        const setReps = base === 0 ? r + progress : r;
         const prior = await db.sets.where("exerciseId").equals(exerciseId).toArray();
-        const best = prior.reduce((m, x) => Math.max(m, e1rm(x.weight ?? 0, x.reps ?? 0)), 0);
-        const score = e1rm(weight, r);
+        const value = (w: number, n: number) => (base === 0 ? n : e1rm(w, n));
+        const best = prior.reduce((m, x) => Math.max(m, value(x.weight ?? 0, x.reps ?? 0)), 0);
+        const score = value(weight, setReps);
         await db.sets.add({
           id: uid(),
           workoutId,
@@ -413,7 +515,7 @@ export async function loadDemoData() {
           exerciseId,
           position: s,
           weight,
-          reps: base === 0 ? r + progress : r,
+          reps: setReps,
           completed: true,
           completedAt: startedAt + (pos * 12 + s * 3) * 60000,
           isPR: prior.length > 0 && score > best,

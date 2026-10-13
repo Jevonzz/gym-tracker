@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Beef, Check, CupSoda, Dumbbell, Flame, Minus, Plus, Scale, Target, Trash2, Utensils, X } from "lucide-react";
+import { Beef, Check, ChevronLeft, CupSoda, Dumbbell, Flame, Minus, Plus, Scale, Search, Target, Trash2, Utensils, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,10 @@ import { Switch } from "@/components/ui/switch";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { BodyweightChart } from "@/components/charts";
 import { useBulkOverview, useFoods, useSettings } from "@/hooks/use-data";
-import type { BulkDay, BulkOverview } from "@/lib/db/queries";
+import { autoTargets, type BulkDay, type BulkOverview, type DailyTargets } from "@/lib/db/queries";
 import { addIntake, deleteDailyLog, deleteFood, deleteFoodEntry, logFood, saveFood, updateDailyLog, updateSettings } from "@/lib/db/repo";
 import type { FoodEntry, Settings } from "@/lib/db/types";
+import { FOOD_PRESETS } from "@/lib/food-data";
 import { cn, formatNumber, parseDayKey } from "@/lib/utils";
 
 const PROTEIN_STEP = 25;
@@ -46,10 +47,11 @@ export function BulkScreen() {
           <TodayCard
             day={overview.today}
             settings={settings}
+            targets={overview.targets}
             onEdit={() => setEditing(overview.today)}
             onAddFood={() => setAddingFoodFor(overview.today.date)}
           />
-          <WeekCard week={overview.week} settings={settings} onEdit={setEditing} />
+          <WeekCard week={overview.week} proteinTarget={overview.targets.protein} onEdit={setEditing} />
           <TrendCard overview={overview} settings={settings} />
           <HistoryList history={overview.history} settings={settings} onEdit={setEditing} />
         </>
@@ -151,8 +153,21 @@ function GoalCard({ overview, settings, onSetGoal }: { overview: BulkOverview; s
   );
 }
 
-function TodayCard({ day, settings, onEdit, onAddFood }: { day: BulkDay; settings: Settings; onEdit: () => void; onAddFood: () => void }) {
-  const { unit, proteinTarget, gainerTarget, calorieTarget } = settings;
+function TodayCard({
+  day,
+  settings,
+  targets,
+  onEdit,
+  onAddFood,
+}: {
+  day: BulkDay;
+  settings: Settings;
+  targets: DailyTargets;
+  onEdit: () => void;
+  onAddFood: () => void;
+}) {
+  const { unit, gainerTarget } = settings;
+  const { protein: proteinTarget, kcal: calorieTarget } = targets;
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
@@ -197,6 +212,11 @@ function TodayCard({ day, settings, onEdit, onAddFood }: { day: BulkDay; setting
           progress={day.gainer / gainerTarget}
         />
       </div>
+      {targets.auto && (
+        <p className="text-[11px] text-muted-foreground">
+          Targets worked out from your bodyweight{settings.goalWeight == null ? "" : " and goal"}. Change this in Settings.
+        </p>
+      )}
       <Button className="w-full" onClick={onAddFood}>
         <Utensils /> Add food
       </Button>
@@ -278,7 +298,7 @@ function Tile({
   );
 }
 
-function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Settings; onEdit: (d: BulkDay) => void }) {
+function WeekCard({ week, proteinTarget, onEdit }: { week: BulkDay[]; proteinTarget: number; onEdit: (d: BulkDay) => void }) {
   const trainingDays = week.filter((d) => d.isTrainingDay).length;
   const avgProtein = week.reduce((a, d) => a + d.totalProtein, 0) / week.length;
   const avgKcal = week.reduce((a, d) => a + d.totalKcal, 0) / week.length;
@@ -301,8 +321,8 @@ function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Setti
                 {date.getDate()}
               </span>
               <span
-                className={cn("size-1.5 rounded-full bg-transparent", d.totalProtein >= settings.proteinTarget && "bg-chart-2")}
-                aria-label={d.totalProtein >= settings.proteinTarget ? "Protein target hit" : undefined}
+                className={cn("size-1.5 rounded-full bg-transparent", d.totalProtein >= proteinTarget && "bg-chart-2")}
+                aria-label={d.totalProtein >= proteinTarget ? "Protein target hit" : undefined}
               />
             </button>
           );
@@ -518,9 +538,12 @@ function GoalEditor({
 function GoalForm({ settings, suggested, onDone }: { settings: Settings; suggested: number | null; onDone: () => void }) {
   const [goal, setGoal] = React.useState(settings.goalWeight == null ? "" : String(settings.goalWeight));
 
+  const g = parseFloat(goal.replace(",", "."));
+  const parsed = Number.isFinite(g) && g > 0 ? Math.round(g * 10) / 10 : null;
+  const preview = settings.autoTargets && suggested != null ? autoTargets(suggested, parsed, settings.unit) : null;
+
   async function save() {
-    const g = parseFloat(goal.replace(",", "."));
-    await updateSettings({ goalWeight: Number.isFinite(g) && g > 0 ? Math.round(g * 10) / 10 : null });
+    await updateSettings({ goalWeight: parsed });
     onDone();
   }
 
@@ -540,6 +563,12 @@ function GoalForm({ settings, suggested, onDone }: { settings: Settings; suggest
           onChange={(e) => setGoal(e.target.value)}
           className="h-12 text-lg"
         />
+        {preview && (
+          <p className="pt-1 text-sm text-muted-foreground tabular">
+            Daily target: <span className="font-semibold text-foreground">{formatNumber(preview.kcal)} kcal</span> and{" "}
+            <span className="font-semibold text-foreground">{formatNumber(preview.protein)} g protein</span>
+          </p>
+        )}
       </div>
       <DrawerFooter className="flex-row">
         {settings.goalWeight != null && (
@@ -569,14 +598,31 @@ function FoodDrawer({ date, onClose }: { date: string | null; onClose: () => voi
   );
 }
 
+const PORTIONS = [0.5, 1, 1.5, 2];
+
+interface FoodPick {
+  name: string;
+  serving?: string;
+  kcal: number;
+  protein: number;
+  foodId?: string;
+}
+
 function FoodForm({ date, onDone }: { date: string; onDone: () => void }) {
   const foods = useFoods();
-  const [tab, setTab] = React.useState<"saved" | "quick">("saved");
+  const [tab, setTab] = React.useState<"search" | "quick">("search");
+  const [query, setQuery] = React.useState("");
+  const [picked, setPicked] = React.useState<FoodPick | null>(null);
+  const [portion, setPortion] = React.useState(1);
   const [name, setName] = React.useState("");
   const [kcal, setKcal] = React.useState("");
   const [protein, setProtein] = React.useState("");
   const [remember, setRemember] = React.useState(true);
-  const mode = foods?.length === 0 ? "quick" : tab;
+
+  const q = query.trim().toLowerCase();
+  const matches = (n: string) => !q || q.split(/\s+/).every((w) => n.toLowerCase().includes(w));
+  const mine = (foods ?? []).filter((f) => matches(f.name));
+  const presets = FOOD_PRESETS.filter((f) => matches(f.name));
 
   async function quickAdd() {
     const k = Math.max(0, Math.round(parseFloat(kcal) || 0));
@@ -592,6 +638,19 @@ function FoodForm({ date, onDone }: { date: string; onDone: () => void }) {
     onDone();
   }
 
+  async function addPicked() {
+    if (!picked) return;
+    const label = portion === 1 ? picked.name : `${picked.name} ×${formatNumber(portion, 1)}`;
+    await logFood(date, {
+      name: label,
+      kcal: Math.round(picked.kcal * portion),
+      protein: Math.round(picked.protein * portion),
+      foodId: picked.foodId,
+    });
+    toast.success(`Added ${label}`);
+    onDone();
+  }
+
   return (
     <>
       <DrawerHeader>
@@ -603,38 +662,101 @@ function FoodForm({ date, onDone }: { date: string; onDone: () => void }) {
       <div className="px-4">
         <Segmented
           className="w-full"
-          value={mode}
-          onChange={setTab}
+          value={tab}
+          onChange={(t) => {
+            setTab(t);
+            setPicked(null);
+          }}
           options={[
-            { value: "saved", label: "My foods" },
+            { value: "search", label: "Find food" },
             { value: "quick", label: "Quick add" },
           ]}
         />
       </div>
-      {mode === "saved" ? (
-        <ul className="mt-3 max-h-[50dvh] divide-y divide-border/60 overflow-y-auto px-4">
-          {foods?.map((f) => (
-            <li key={f.id} className="flex items-center gap-2">
-              <button
-                className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left active:opacity-70"
-                onClick={async () => {
-                  await logFood(date, { name: f.name, kcal: f.kcal, protein: f.protein, foodId: f.id });
-                  toast.success(`Added ${f.name}`);
-                  onDone();
-                }}
-              >
-                <Plus className="size-4 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1 truncate font-medium">{f.name}</span>
-                <span className="text-xs text-muted-foreground tabular">
-                  {formatNumber(f.kcal)} kcal · {formatNumber(f.protein)} g
-                </span>
-              </button>
-              <Button variant="ghost" size="icon-sm" aria-label={`Delete ${f.name}`} onClick={() => deleteFood(f.id)}>
-                <Trash2 />
-              </Button>
-            </li>
-          ))}
-        </ul>
+      {tab === "search" && picked ? (
+        <div className="mt-3 space-y-4 px-4">
+          <button className="flex items-center gap-1 text-sm text-muted-foreground" onClick={() => setPicked(null)}>
+            <ChevronLeft className="size-4" /> Back to list
+          </button>
+          <div>
+            <div className="text-lg font-semibold">{picked.name}</div>
+            {picked.serving && <div className="text-sm text-muted-foreground">Per {picked.serving}</div>}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Portion</Label>
+            <Segmented
+              className="w-full"
+              value={String(portion)}
+              onChange={(v) => setPortion(Number(v))}
+              options={PORTIONS.map((p) => ({ value: String(p), label: `×${formatNumber(p, 1)}` }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Tile icon={<Flame />} label="Calories" value={`${formatNumber(picked.kcal * portion)} kcal`} />
+            <Tile icon={<Beef />} label="Protein" value={`${formatNumber(picked.protein * portion)} g`} />
+          </div>
+        </div>
+      ) : tab === "search" ? (
+        <div className="mt-3 px-4">
+          <div className="relative">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search food"
+              placeholder="Search, e.g. nasi lemak"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <ul className="mt-2 max-h-[45dvh] divide-y divide-border/60 overflow-y-auto">
+            {mine.length > 0 && <li className="pt-2 pb-1 text-xs font-semibold text-muted-foreground">My foods</li>}
+            {mine.map((f) => (
+              <li key={f.id} className="flex items-center gap-2">
+                <FoodRow
+                  name={f.name}
+                  kcal={f.kcal}
+                  protein={f.protein}
+                  onClick={() => {
+                    setPortion(1);
+                    setPicked({ name: f.name, kcal: f.kcal, protein: f.protein, foodId: f.id });
+                  }}
+                />
+                <Button variant="ghost" size="icon-sm" aria-label={`Delete ${f.name}`} onClick={() => deleteFood(f.id)}>
+                  <Trash2 />
+                </Button>
+              </li>
+            ))}
+            {presets.length > 0 && <li className="pt-3 pb-1 text-xs font-semibold text-muted-foreground">Common foods</li>}
+            {presets.map((f) => (
+              <li key={f.name}>
+                <FoodRow
+                  name={f.name}
+                  serving={f.serving}
+                  kcal={f.kcal}
+                  protein={f.protein}
+                  onClick={() => {
+                    setPortion(1);
+                    setPicked(f);
+                  }}
+                />
+              </li>
+            ))}
+            {!mine.length && !presets.length && (
+              <li className="py-6 text-center text-sm text-muted-foreground">
+                Nothing found.{" "}
+                <button
+                  className="font-medium text-primary"
+                  onClick={() => {
+                    setName(query.trim());
+                    setTab("quick");
+                  }}
+                >
+                  Add it yourself
+                </button>
+              </li>
+            )}
+          </ul>
+        </div>
       ) : (
         <div className="mt-3 space-y-3 px-4">
           <div className="space-y-1.5">
@@ -655,17 +777,51 @@ function FoodForm({ date, onDone }: { date: string; onDone: () => void }) {
             <Label htmlFor="remember">Save to My foods</Label>
             <Switch id="remember" checked={remember} onCheckedChange={setRemember} />
           </div>
+          <p className="text-xs text-muted-foreground">Not sure of the numbers? Use Find food to pick something close.</p>
         </div>
       )}
       <DrawerFooter>
-        {mode === "quick" ? (
+        {tab === "quick" ? (
           <Button size="lg" onClick={quickAdd}>
             Add
           </Button>
+        ) : picked ? (
+          <Button size="lg" onClick={addPicked}>
+            Add {formatNumber(picked.kcal * portion)} kcal
+          </Button>
         ) : (
-          <p className="text-center text-xs text-muted-foreground">Tap a food to add it. Use Quick add for anything new.</p>
+          <p className="text-center text-xs text-muted-foreground">Calories are typical estimates; portions vary.</p>
         )}
       </DrawerFooter>
     </>
+  );
+}
+
+function FoodRow({
+  name,
+  serving,
+  kcal,
+  protein,
+  onClick,
+}: {
+  name: string;
+  serving?: string;
+  kcal: number;
+  protein: number;
+  onClick: () => void;
+}) {
+  return (
+    <button className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left active:opacity-70" onClick={onClick}>
+      <Plus className="size-4 shrink-0 text-primary" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{name}</span>
+        {serving && <span className="block text-xs text-muted-foreground">{serving}</span>}
+      </span>
+      <span className="shrink-0 text-right text-xs text-muted-foreground tabular">
+        {formatNumber(kcal)} kcal
+        <br />
+        {formatNumber(protein)} g protein
+      </span>
+    </button>
   );
 }

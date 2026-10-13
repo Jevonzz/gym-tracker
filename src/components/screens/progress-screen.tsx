@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChartLine, Trophy } from "lucide-react";
+import { ChartLine, Library, Trophy } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,7 +26,7 @@ export function ProgressScreen() {
   if (trained?.length === 0) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Progress" subtitle="Your trends" />
+        <PageHeader title="Progress" subtitle="Your trends" action={<LibraryButton />} />
         <EmptyState icon={<ChartLine />} title="Nothing to chart yet">
           Log a couple of workouts and your volume, strength trends and PRs appear here.
         </EmptyState>
@@ -37,7 +39,7 @@ export function ProgressScreen() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Progress" subtitle="Last 8 weeks" />
+      <PageHeader title="Progress" subtitle="Last 8 weeks" action={<LibraryButton />} />
 
       <Card className="p-4">
         <div className="flex items-end justify-between">
@@ -111,5 +113,15 @@ export function ProgressScreen() {
         ))}
       </section>
     </div>
+  );
+}
+
+function LibraryButton() {
+  return (
+    <Button asChild variant="secondary" size="sm">
+      <Link href="/exercises">
+        <Library /> Exercises
+      </Link>
+    </Button>
   );
 }

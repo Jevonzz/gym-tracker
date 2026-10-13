@@ -22,13 +22,15 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { useSettings } from "@/hooks/use-data";
-import { exportData, importData, loadDemoData, resetAllData, updateSettings } from "@/lib/db/repo";
+import { useBulkOverview, useSettings } from "@/hooks/use-data";
+import { changeUnit, exportData, importData, loadDemoData, resetAllData, updateSettings } from "@/lib/db/repo";
 import type { BackupFile, Unit } from "@/lib/db/types";
 
 export function SettingsScreen() {
   const router = useRouter();
   const settings = useSettings();
+  const targets = useBulkOverview()?.targets;
+  const auto = settings.autoTargets && targets?.auto;
   const { theme, setTheme } = useTheme();
   const mounted = React.useSyncExternalStore(
     noop,
@@ -36,6 +38,12 @@ export function SettingsScreen() {
     () => false,
   );
   const [usage, setUsage] = React.useState<string | null>(null);
+  const [, rerender] = React.useReducer((n: number) => n + 1, 0);
+  const notify = React.useSyncExternalStore(
+    noop,
+    () => (typeof Notification === "undefined" ? "unsupported" : Notification.permission),
+    () => null,
+  );
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -73,10 +81,13 @@ export function SettingsScreen() {
       </header>
 
       <Group title="Workout">
-        <Row label="Weight unit" hint="Label only, values are not converted">
+        <Row label="Weight unit" hint="Switching converts all your logged weights">
           <Segmented<Unit>
             value={settings.unit}
-            onChange={(unit) => updateSettings({ unit })}
+            onChange={async (unit) => {
+              await changeUnit(unit);
+              toast.success(`All weights now in ${unit}`);
+            }}
             options={[
               { value: "kg", label: "kg" },
               { value: "lb", label: "lb" },
@@ -85,6 +96,29 @@ export function SettingsScreen() {
         </Row>
         <Row label="Auto-start rest timer" hint="After you tick off a set">
           <Switch checked={settings.autoRest} onCheckedChange={(autoRest) => updateSettings({ autoRest })} />
+        </Row>
+        <Row label="Keep screen on" hint="While a workout is in progress, so the rest timer can beep">
+          <Switch checked={settings.keepAwake} onCheckedChange={(keepAwake) => updateSettings({ keepAwake })} />
+        </Row>
+        <Row label="Rest alerts" hint="Notify you when rest ends if you leave the app">
+          {notify === "granted" ? (
+            <span className="text-sm text-muted-foreground">On</span>
+          ) : notify === "denied" ? (
+            <span className="text-right text-xs text-muted-foreground">Blocked in phone settings</span>
+          ) : notify === "default" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                await Notification.requestPermission();
+                rerender();
+              }}
+            >
+              Turn on
+            </Button>
+          ) : (
+            <span className="text-right text-xs text-muted-foreground">Not supported here</span>
+          )}
         </Row>
         <Row label="Rest duration">
           <Segmented
@@ -105,18 +139,33 @@ export function SettingsScreen() {
             onClear={() => updateSettings({ goalWeight: null })}
           />
         </Row>
-        <Row label="Daily protein target" hint="grams">
-          <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
+        <Row label="Auto targets" hint="Calories and protein from your bodyweight and goal">
+          <Switch checked={settings.autoTargets} onCheckedChange={(autoTargets) => updateSettings({ autoTargets })} />
         </Row>
-        <Row label="Daily calorie target" hint="kcal, leave empty for none">
-          <NumberField
-            value={settings.calorieTarget}
-            step={50}
-            placeholder="None"
-            onCommit={(calorieTarget) => updateSettings({ calorieTarget })}
-            onClear={() => updateSettings({ calorieTarget: null })}
-          />
-        </Row>
+        {auto ? (
+          <Row label="Daily targets" hint="Updates as your weight changes">
+            <span className="text-right text-sm font-semibold tabular">
+              {targets.kcal == null ? "" : `${targets.kcal.toLocaleString()} kcal`}
+              <br />
+              {targets.protein} g protein
+            </span>
+          </Row>
+        ) : (
+          <>
+            <Row label="Daily protein target" hint={settings.autoTargets ? "grams, until your first weigh-in" : "grams"}>
+              <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
+            </Row>
+            <Row label="Daily calorie target" hint="kcal, leave empty for none">
+              <NumberField
+                value={settings.calorieTarget}
+                step={50}
+                placeholder="None"
+                onCommit={(calorieTarget) => updateSettings({ calorieTarget })}
+                onClear={() => updateSettings({ calorieTarget: null })}
+              />
+            </Row>
+          </>
+        )}
         <Row label="Gainer calories" hint="kcal per serving">
           <NumberField
             value={settings.gainerKcal || null}

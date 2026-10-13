@@ -27,7 +27,7 @@ import { useActiveWorkout, useRoutines, useSettings, useWorkoutDetail } from "@/
 import type { WorkoutDetail } from "@/lib/db/queries";
 import * as repo from "@/lib/db/repo";
 import type { SetEntry, Unit } from "@/lib/db/types";
-import { useNow } from "@/hooks/use-now";
+import { useNow, useWakeLock } from "@/hooks/use-now";
 import { cn, formatDuration, formatNumber } from "@/lib/utils";
 
 export function WorkoutScreen() {
@@ -69,7 +69,8 @@ function NoActiveWorkout() {
 function ActiveWorkout({ detail }: { detail: WorkoutDetail }) {
   const router = useRouter();
   const { workout, items } = detail;
-  const { unit } = useSettings();
+  const { unit, keepAwake } = useSettings();
+  useWakeLock(keepAwake);
   const [picker, setPicker] = React.useState(false);
   const [confirm, setConfirm] = React.useState<"finish" | "discard" | null>(null);
   const [routineOpen, setRoutineOpen] = React.useState(false);
@@ -253,7 +254,7 @@ function SetRow({ set, index, previous }: { set: SetEntry; index: number; previo
     if (res.completed) {
       navigator.vibrate?.(30);
       if (autoRest) start(restSeconds);
-      if (res.isPR) toast("New personal record! 🏆", { description: "Best estimated 1RM for this exercise." });
+      if (res.isPR) toast("New personal record! 🏆", { description: "Your best set yet for this exercise." });
     }
   }
 
@@ -316,7 +317,7 @@ function SetRow({ set, index, previous }: { set: SetEntry; index: number; previo
   );
 }
 
-function NumberCell({
+export function NumberCell({
   value,
   placeholder,
   decimal,

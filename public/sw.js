@@ -1,6 +1,6 @@
 /* Lift service worker: makes the app load and navigate fully offline.
  * All user data lives in IndexedDB, so only the app shell needs caching. */
-const VERSION = "v2";
+const VERSION = "v3";
 const CACHE = `lift-${VERSION}`;
 const PAGES = ["/", "/workout", "/history", "/exercises", "/exercises/detail", "/progress", "/bulk", "/settings"];
 const STATIC = ["/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
@@ -87,4 +87,15 @@ self.addEventListener("fetch", (event) => {
         .catch(async () => (await caches.match(url.pathname)) || (await caches.match("/")) || Response.error()),
     );
   }
+});
+
+// Rest timer alert: bring the app back to the front.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => "focus" in c);
+      return open ? open.focus() : self.clients.openWindow("/workout");
+    }),
+  );
 });
