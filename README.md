@@ -13,6 +13,7 @@ A mobile-first workout logger built as an installable, offline-capable PWA.
 - **Exercise library**: 44 built-in exercises, filter by muscle group, add custom ones.
 - **Progress**: weekly volume chart, estimated 1RM trend per exercise, recent PRs, per-exercise records and history.
 - **Bulk log**: daily bodyweight, protein and mass gainer, with training days taken from logged workouts (or marked by hand). Shows the 7-day average weight against a goal weight you set yourself (on the Bulk screen or in Settings, or none), the weekly gain rate and a projected date.
+- **Food log**: save foods you eat often and add them in one tap, or quick-add calories and protein. Counts toward a daily calorie target (optional) and protein target, with mass gainer calories and protein per serving set in Settings.
 - **History**: workouts grouped by month, with a detail sheet and delete.
 - **Installable PWA**: manifest, icons and a service worker; the app loads and navigates with no connection.
 - **Backup**: export / import all data as JSON, sample data loader, erase all.
@@ -76,6 +77,6 @@ public/
 | ------------------------------------- | ------------------------------------------- | --------------------------------------------- |
 | ![Home](docs/screenshots/02-home.png) | ![Workout](docs/screenshots/03-workout.png) | ![Progress](docs/screenshots/07-progress.png) |
 
-| Bulk                                  |
-| ------------------------------------- |
-| ![Bulk](docs/screenshots/11-bulk.png) |
+| Bulk                                  | Food                                  |
+| ------------------------------------- | ------------------------------------- |
+| ![Bulk](docs/screenshots/11-bulk.png) | ![Food](docs/screenshots/12-food.png) |

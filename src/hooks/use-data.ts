@@ -17,5 +17,6 @@ export const useWeeklyVolume = (weeks = 8) => useLiveQuery(() => q.getWeeklyVolu
 export const useRecentPRs = (limit = 8) => useLiveQuery(() => q.getRecentPRs(limit), [limit]);
 export const useTrainedExercises = () => useLiveQuery(q.getTrainedExercises);
 export const useBulkOverview = () => useLiveQuery(q.getBulkOverview);
+export const useFoods = () => useLiveQuery(q.getFoods);
 export const useRoutines = () => useLiveQuery(q.getRoutines);
 export const useSettings = () => useLiveQuery(getSettings) ?? DEFAULT_SETTINGS;

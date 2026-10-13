@@ -11,6 +11,7 @@ import {
   type BackupFile,
   type DailyLog,
   type Equipment,
+  type Food,
   type MuscleGroup,
   type SetEntry,
   type Settings,
@@ -257,12 +258,42 @@ export async function deleteDailyLog(date: string) {
   await db.dailyLogs.delete(date);
 }
 
+/* ------------------------------------ food ----------------------------------- */
+
+export type FoodInput = Pick<Food, "name" | "kcal" | "protein">;
+
+export async function saveFood(input: FoodInput) {
+  const id = uid();
+  await db.foods.add({ id, name: input.name.trim(), kcal: input.kcal, protein: input.protein, createdAt: Date.now() });
+  return id;
+}
+
+export async function deleteFood(id: string) {
+  await db.foods.delete(id);
+}
+
+export async function logFood(date: string, input: FoodInput & { foodId?: string }) {
+  await db.foodEntries.add({
+    id: uid(),
+    date,
+    name: input.name.trim() || "Quick add",
+    kcal: input.kcal,
+    protein: input.protein,
+    foodId: input.foodId,
+    createdAt: Date.now(),
+  });
+}
+
+export async function deleteFoodEntry(id: string) {
+  await db.foodEntries.delete(id);
+}
+
 /* ------------------------------- backup & reset ------------------------------- */
 
 export async function exportData(): Promise<BackupFile> {
   return {
     app: "gym-tracker",
-    version: 2,
+    version: 3,
     exportedAt: Date.now(),
     exercises: await db.exercises.toArray(),
     workouts: await db.workouts.toArray(),
@@ -270,30 +301,40 @@ export async function exportData(): Promise<BackupFile> {
     sets: await db.sets.toArray(),
     routines: await db.routines.toArray(),
     dailyLogs: await db.dailyLogs.toArray(),
+    foods: await db.foods.toArray(),
+    foodEntries: await db.foodEntries.toArray(),
     settings: await getSettings(),
   };
 }
 
 export async function importData(data: BackupFile) {
-  if (data?.app !== "gym-tracker" || (data.version !== 1 && data.version !== 2)) throw new Error("Not a Gym Tracker backup file.");
-  await db.transaction("rw", [db.exercises, db.workouts, db.workoutExercises, db.sets, db.routines, db.dailyLogs, db.kv], async () => {
-    await Promise.all([
-      db.exercises.clear(),
-      db.workouts.clear(),
-      db.workoutExercises.clear(),
-      db.sets.clear(),
-      db.routines.clear(),
-      db.dailyLogs.clear(),
-    ]);
-    await db.exercises.bulkPut(data.exercises);
-    await db.workouts.bulkPut(data.workouts);
-    await db.workoutExercises.bulkPut(data.workoutExercises);
-    await db.sets.bulkPut(data.sets);
-    await db.routines.bulkPut(data.routines);
-    await db.dailyLogs.bulkPut(data.dailyLogs ?? []);
-    await db.kv.put({ key: "settings", value: data.settings });
-    await db.kv.put({ key: "seeded", value: true });
-  });
+  if (data?.app !== "gym-tracker" || ![1, 2, 3].includes(data.version)) throw new Error("Not a Gym Tracker backup file.");
+  await db.transaction(
+    "rw",
+    [db.exercises, db.workouts, db.workoutExercises, db.sets, db.routines, db.dailyLogs, db.foods, db.foodEntries, db.kv],
+    async () => {
+      await Promise.all([
+        db.exercises.clear(),
+        db.workouts.clear(),
+        db.workoutExercises.clear(),
+        db.sets.clear(),
+        db.routines.clear(),
+        db.dailyLogs.clear(),
+        db.foods.clear(),
+        db.foodEntries.clear(),
+      ]);
+      await db.exercises.bulkPut(data.exercises);
+      await db.workouts.bulkPut(data.workouts);
+      await db.workoutExercises.bulkPut(data.workoutExercises);
+      await db.sets.bulkPut(data.sets);
+      await db.routines.bulkPut(data.routines);
+      await db.dailyLogs.bulkPut(data.dailyLogs ?? []);
+      await db.foods.bulkPut(data.foods ?? []);
+      await db.foodEntries.bulkPut(data.foodEntries ?? []);
+      await db.kv.put({ key: "settings", value: data.settings });
+      await db.kv.put({ key: "seeded", value: true });
+    },
+  );
 }
 
 export async function resetAllData() {
@@ -400,4 +441,15 @@ export async function loadDemoData() {
     });
   }
   await db.dailyLogs.bulkPut(logs);
+
+  // A few saved foods so the food picker has something in it.
+  if ((await db.foods.count()) === 0) {
+    for (const f of [
+      { name: "Chicken rice", kcal: 650, protein: 35 },
+      { name: "Protein shake", kcal: 130, protein: 25 },
+      { name: "Oats with milk", kcal: 400, protein: 18 },
+      { name: "4 eggs", kcal: 290, protein: 25 },
+    ])
+      await saveFood(f);
+  }
 }

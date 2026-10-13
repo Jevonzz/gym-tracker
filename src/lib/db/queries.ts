@@ -1,6 +1,16 @@
 /** Read models. Each function is a plain async query, wrapped by hooks in `hooks/use-data.ts`. */
 import { db } from "./dexie";
-import { emptyDailyLog, type DailyLog, type Exercise, type SetEntry, type Workout, type WorkoutExercise } from "./types";
+import {
+  DEFAULT_SETTINGS,
+  emptyDailyLog,
+  type DailyLog,
+  type FoodEntry,
+  type Settings,
+  type Exercise,
+  type SetEntry,
+  type Workout,
+  type WorkoutExercise,
+} from "./types";
 import { addDays, dayKey, e1rm, parseDayKey, startOfWeek } from "@/lib/utils";
 
 export async function getActiveWorkout() {
@@ -246,6 +256,12 @@ export interface BulkDay extends DailyLog {
   workouts: number;
   /** Logged workout or marked by hand */
   isTrainingDay: boolean;
+  /** Food eaten that day, oldest first */
+  entries: FoodEntry[];
+  /** Food + gainer + extra protein */
+  totalProtein: number;
+  /** Food + gainer */
+  totalKcal: number;
 }
 
 export interface WeighIn {
@@ -273,7 +289,17 @@ export interface BulkOverview {
 
 export async function getBulkOverview(): Promise<BulkOverview> {
   const todayKey = dayKey();
-  const [logs, workouts] = await Promise.all([db.dailyLogs.orderBy("date").toArray(), db.workouts.toArray()]);
+  const [logs, workouts, entries, settingsRow] = await Promise.all([
+    db.dailyLogs.orderBy("date").toArray(),
+    db.workouts.toArray(),
+    db.foodEntries.toArray(),
+    db.kv.get("settings"),
+  ]);
+  const { gainerKcal, gainerProtein } = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
+  const entriesByDay = new Map<string, FoodEntry[]>();
+  for (const e of entries.sort((a, b) => a.createdAt - b.createdAt)) {
+    entriesByDay.set(e.date, [...(entriesByDay.get(e.date) ?? []), e]);
+  }
 
   const workoutsByDay = new Map<string, number>();
   for (const w of workouts) {
@@ -285,7 +311,15 @@ export async function getBulkOverview(): Promise<BulkOverview> {
   const dayView = (date: string): BulkDay => {
     const log = logByDay.get(date) ?? emptyDailyLog(date);
     const count = workoutsByDay.get(date) ?? 0;
-    return { ...log, workouts: count, isTrainingDay: count > 0 || log.trained };
+    const food = entriesByDay.get(date) ?? [];
+    return {
+      ...log,
+      workouts: count,
+      isTrainingDay: count > 0 || log.trained,
+      entries: food,
+      totalProtein: log.protein + log.gainer * gainerProtein + food.reduce((a, e) => a + e.protein, 0),
+      totalKcal: log.gainer * gainerKcal + food.reduce((a, e) => a + e.kcal, 0),
+    };
   };
 
   const weighed = logs.filter((l): l is DailyLog & { weight: number } => l.weight != null && l.weight > 0);
@@ -300,7 +334,7 @@ export async function getBulkOverview(): Promise<BulkOverview> {
     return { date: l.date, weight: l.weight, avg: Math.round((sum / n) * 100) / 100 };
   });
 
-  const days = new Set([...logByDay.keys(), ...workoutsByDay.keys()]);
+  const days = new Set([...logByDay.keys(), ...workoutsByDay.keys(), ...entriesByDay.keys()]);
   const history = [...days]
     .filter((d) => d <= todayKey)
     .sort()
@@ -333,4 +367,8 @@ function weeklyRate(points: WeighIn[]) {
     den += (x - mx) ** 2;
   });
   return den ? (num / den) * 7 : null;
+}
+
+export async function getFoods() {
+  return db.foods.orderBy("name").toArray();
 }
