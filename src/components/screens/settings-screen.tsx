@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { useBulkOverview, useSettings } from "@/hooks/use-data";
-import { exportData, importData, loadDemoData, resetAllData, updateSettings } from "@/lib/db/repo";
+import { changeUnit, exportData, importData, loadDemoData, resetAllData, updateSettings } from "@/lib/db/repo";
 import type { BackupFile, Unit } from "@/lib/db/types";
 
 export function SettingsScreen() {
@@ -75,10 +75,13 @@ export function SettingsScreen() {
       </header>
 
       <Group title="Workout">
-        <Row label="Weight unit" hint="Label only, values are not converted">
+        <Row label="Weight unit" hint="Switching converts all your logged weights">
           <Segmented<Unit>
             value={settings.unit}
-            onChange={(unit) => updateSettings({ unit })}
+            onChange={async (unit) => {
+              await changeUnit(unit);
+              toast.success(`All weights now in ${unit}`);
+            }}
             options={[
               { value: "kg", label: "kg" },
               { value: "lb", label: "lb" },

@@ -54,6 +54,32 @@ export async function updateSettings(patch: Partial<Settings>) {
   await db.kv.put({ key: "settings", value: { ...current, ...patch } });
 }
 
+const KG_PER_LB = 0.45359237;
+
+/** Switches kg/lb and converts every stored weight (sets, weigh-ins, goal) so the numbers stay true. */
+export async function changeUnit(unit: Settings["unit"]) {
+  const settings = await getSettings();
+  if (settings.unit === unit) return;
+  const factor = unit === "lb" ? 1 / KG_PER_LB : KG_PER_LB;
+  const convert = (w: number) => Math.round(w * factor * 100) / 100;
+  await db.transaction("rw", [db.sets, db.dailyLogs, db.kv], async () => {
+    await db.sets
+      .filter((s) => !!s.weight)
+      .modify((s) => {
+        s.weight = convert(s.weight!);
+      });
+    await db.dailyLogs
+      .filter((l) => !!l.weight)
+      .modify((l) => {
+        l.weight = convert(l.weight!);
+      });
+    await db.kv.put({
+      key: "settings",
+      value: { ...settings, unit, goalWeight: settings.goalWeight == null ? null : convert(settings.goalWeight) },
+    });
+  });
+}
+
 /* ---------------------------------- workouts --------------------------------- */
 
 function defaultWorkoutName(date = new Date()) {
