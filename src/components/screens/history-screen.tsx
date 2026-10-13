@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, Clock, Trash2, Trophy, Weight } from "lucide-react";
+import { CalendarDays, Clock, Pencil, Plus, Trash2, Trophy, Weight, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -21,7 +21,8 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, D
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { WorkoutCard } from "@/components/workout-card";
 import { useSettings, useWorkoutDetail, useWorkoutSummaries } from "@/hooks/use-data";
-import { deleteWorkout } from "@/lib/db/repo";
+import { NumberCell } from "@/components/screens/workout-screen";
+import { addLoggedSet, deleteWorkout, recomputePRs, removeLoggedSet, updateSet } from "@/lib/db/repo";
 import { e1rm, formatDurationShort, formatNumber } from "@/lib/utils";
 
 export function HistoryScreen() {
@@ -67,12 +68,26 @@ function WorkoutDetailDrawer({ id, onClose }: { id: string | null; onClose: () =
   const detail = useWorkoutDetail(id);
   const { unit } = useSettings();
   const open = !!id && !!detail;
+  const [editing, setEditing] = React.useState(false);
+  const touched = React.useRef(new Set<string>());
+
+  async function finishEditing() {
+    setEditing(false);
+    // Edits can change which sets are records, so re-check the exercises that were touched.
+    for (const exerciseId of touched.current) await recomputePRs(exerciseId);
+    touched.current.clear();
+  }
+
+  function close() {
+    if (editing) finishEditing();
+    onClose();
+  }
 
   const sets = detail?.items.flatMap((i) => i.sets) ?? [];
   const volume = sets.reduce((v, s) => v + (s.weight ?? 0) * (s.reps ?? 0), 0);
 
   return (
-    <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
+    <Drawer open={open} onOpenChange={(o) => !o && close()}>
       <DrawerContent>
         {detail && (
           <>
@@ -101,24 +116,86 @@ function WorkoutDetailDrawer({ id, onClose }: { id: string | null; onClose: () =
                 <div key={we.id}>
                   <div className="mb-1.5 font-semibold text-primary">{exercise?.name}</div>
                   <div className="divide-y divide-border/60 rounded-xl bg-muted/50">
-                    {sets.map((s, i) => (
-                      <div key={s.id} className="flex items-center justify-between px-3 py-2 text-sm tabular">
-                        <span className="w-8 text-muted-foreground">{i + 1}</span>
-                        <span className="flex-1 font-medium">
-                          {s.weight ? `${formatNumber(s.weight, 1)} ${unit} × ` : ""}
-                          {s.reps} reps
-                        </span>
-                        {s.isPR && <Trophy className="mr-2 size-4 text-amber-400" />}
-                        <span className="text-xs text-muted-foreground">
-                          {s.weight ? `1RM ≈ ${formatNumber(e1rm(s.weight, s.reps ?? 0), 1)}` : ""}
-                        </span>
-                      </div>
-                    ))}
+                    {sets.map((s, i) =>
+                      editing ? (
+                        <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 text-sm tabular">
+                          <span className="w-6 text-muted-foreground">{i + 1}</span>
+                          <div className="w-20">
+                            <NumberCell
+                              value={s.weight}
+                              placeholder="0"
+                              decimal
+                              label={`${exercise?.name} set ${i + 1} weight`}
+                              onChange={(weight) => {
+                                touched.current.add(s.exerciseId);
+                                updateSet(s.id, { weight });
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{unit} ×</span>
+                          <div className="w-16">
+                            <NumberCell
+                              value={s.reps}
+                              placeholder="0"
+                              label={`${exercise?.name} set ${i + 1} reps`}
+                              onChange={(reps) => {
+                                touched.current.add(s.exerciseId);
+                                updateSet(s.id, { reps });
+                              }}
+                            />
+                          </div>
+                          <span className="flex-1 text-xs text-muted-foreground">reps</span>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Delete set ${i + 1}`}
+                            onClick={() => {
+                              touched.current.add(s.exerciseId);
+                              removeLoggedSet(s.id);
+                            }}
+                          >
+                            <X />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div key={s.id} className="flex items-center justify-between px-3 py-2 text-sm tabular">
+                          <span className="w-8 text-muted-foreground">{i + 1}</span>
+                          <span className="flex-1 font-medium">
+                            {s.weight ? `${formatNumber(s.weight, 1)} ${unit} × ` : ""}
+                            {s.reps} reps
+                          </span>
+                          {s.isPR && <Trophy className="mr-2 size-4 text-amber-400" />}
+                          <span className="text-xs text-muted-foreground">
+                            {s.weight ? `1RM ≈ ${formatNumber(e1rm(s.weight, s.reps ?? 0), 1)}` : ""}
+                          </span>
+                        </div>
+                      ),
+                    )}
+                    {editing && (
+                      <button
+                        className="flex w-full items-center justify-center gap-1.5 py-2 text-sm font-medium text-muted-foreground active:bg-accent"
+                        onClick={() => {
+                          touched.current.add(we.exerciseId);
+                          addLoggedSet(we.id);
+                        }}
+                      >
+                        <Plus className="size-4" /> Add set
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
             <DrawerFooter>
+              <Button size="lg" variant={editing ? "default" : "secondary"} onClick={() => (editing ? finishEditing() : setEditing(true))}>
+                {editing ? (
+                  "Done"
+                ) : (
+                  <>
+                    <Pencil /> Edit sets
+                  </>
+                )}
+              </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="ghost" className="text-destructive">

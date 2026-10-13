@@ -316,7 +316,7 @@ function SetRow({ set, index, previous }: { set: SetEntry; index: number; previo
   );
 }
 
-function NumberCell({
+export function NumberCell({
   value,
   placeholder,
   decimal,

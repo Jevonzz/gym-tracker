@@ -159,6 +159,67 @@ export async function addSet(workoutExerciseId: string) {
   });
 }
 
+/** Adds a set to an exercise in a finished workout, copying the last set. */
+export async function addLoggedSet(workoutExerciseId: string) {
+  const we = await db.workoutExercises.get(workoutExerciseId);
+  if (!we) return;
+  const sets = await db.sets.where("workoutExerciseId").equals(workoutExerciseId).sortBy("position");
+  const last = sets.at(-1);
+  await db.sets.add({
+    id: uid(),
+    workoutId: we.workoutId,
+    workoutExerciseId,
+    exerciseId: we.exerciseId,
+    position: (last?.position ?? -1) + 1,
+    weight: last?.weight ?? 0,
+    reps: last?.reps ?? 1,
+    completed: true,
+    completedAt: (last?.completedAt ?? Date.now()) + 1,
+  });
+}
+
+/**
+ * Re-flags personal records for an exercise in the order the sets were done,
+ * after a past workout was edited. Same rules as `toggleSetComplete`.
+ */
+export async function recomputePRs(exerciseId: string) {
+  await db.transaction("rw", db.sets, async () => {
+    const sets = await db.sets
+      .where("exerciseId")
+      .equals(exerciseId)
+      .filter((s) => s.completed)
+      .toArray();
+    sets.sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
+    const best = { weighted: 0, bodyweight: 0, seenWeighted: false, seenBodyweight: false };
+    for (const s of sets) {
+      let isPR: boolean;
+      if (s.weight) {
+        const score = e1rm(s.weight, s.reps ?? 0);
+        isPR = best.seenWeighted && score > best.weighted;
+        best.weighted = Math.max(best.weighted, score);
+        best.seenWeighted = true;
+      } else {
+        const score = s.reps ?? 0;
+        isPR = best.seenBodyweight && score > best.bodyweight;
+        best.bodyweight = Math.max(best.bodyweight, score);
+        best.seenBodyweight = true;
+      }
+      if (!!s.isPR !== isPR) await db.sets.update(s.id, { isPR });
+    }
+  });
+}
+
+/** Removes a set from a finished workout, and the exercise too if it was its last set. */
+export async function removeLoggedSet(id: string) {
+  await db.transaction("rw", [db.sets, db.workoutExercises], async () => {
+    const set = await db.sets.get(id);
+    if (!set) return;
+    await db.sets.delete(id);
+    const left = await db.sets.where("workoutExerciseId").equals(set.workoutExerciseId).count();
+    if (left === 0) await db.workoutExercises.delete(set.workoutExerciseId);
+  });
+}
+
 export async function updateSet(id: string, patch: Partial<Pick<SetEntry, "weight" | "reps">>) {
   await db.sets.update(id, patch);
 }
@@ -218,11 +279,13 @@ export async function finishWorkout(id: string) {
 }
 
 export async function deleteWorkout(id: string) {
+  const exerciseIds = new Set((await db.sets.where("workoutId").equals(id).toArray()).map((s) => s.exerciseId));
   await db.transaction("rw", [db.workouts, db.workoutExercises, db.sets], async () => {
     await db.sets.where("workoutId").equals(id).delete();
     await db.workoutExercises.where("workoutId").equals(id).delete();
     await db.workouts.delete(id);
   });
+  for (const exerciseId of exerciseIds) await recomputePRs(exerciseId);
 }
 
 /* ---------------------------------- exercises -------------------------------- */
