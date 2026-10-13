@@ -173,7 +173,7 @@ function BulkBanner() {
   const { goalWeight, unit, proteinTarget } = useSettings();
   if (!bulk) return null;
   const current = bulk.currentWeight;
-  const toGo = current == null ? null : goalWeight - current;
+  const toGo = current == null || goalWeight == null ? null : goalWeight - current;
   return (
     <Link href="/bulk" className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 active:bg-accent/60">
       <span className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
@@ -181,12 +181,14 @@ function BulkBanner() {
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-xs font-medium text-muted-foreground">
-          Bulk to {formatNumber(goalWeight, 1)} {unit}
+          {goalWeight == null ? "Bulk" : `Bulk to ${formatNumber(goalWeight, 1)} ${unit}`}
         </div>
         <div className="truncate font-semibold tabular">
           {current == null
             ? "Log your first weigh-in"
-            : `${formatNumber(current, 1)} ${unit} · ${toGo! <= 0 ? "goal reached" : `${formatNumber(toGo!, 1)} to go`}`}
+            : toGo == null
+              ? `${formatNumber(current, 1)} ${unit} · set a goal`
+              : `${formatNumber(current, 1)} ${unit} · ${toGo <= 0 ? "goal reached" : `${formatNumber(toGo, 1)} to go`}`}
         </div>
       </div>
       <div className="text-right text-xs text-muted-foreground tabular">

@@ -98,7 +98,7 @@ function WeightTooltip({
   );
 }
 
-/** Daily weigh-ins as dots, the 7-day average as a line, and the goal as a dashed rule. */
+/** Daily weigh-ins as dots, the 7-day average as a line, and the goal (if set) as a dashed rule. */
 export function BodyweightChart({
   data,
   goal,
@@ -106,13 +106,13 @@ export function BodyweightChart({
   height = 220,
 }: {
   data: { label: string; weight: number; avg: number }[];
-  goal: number;
+  goal: number | null;
   unit: string;
   height?: number;
 }) {
-  const values = data.map((d) => d.weight);
-  const lo = Math.floor(Math.min(...values, goal) - 1);
-  const hi = Math.ceil(Math.max(...values, goal) + 0.5);
+  const values = goal == null ? data.map((d) => d.weight) : [...data.map((d) => d.weight), goal];
+  const lo = Math.floor(Math.min(...values) - 1);
+  const hi = Math.ceil(Math.max(...values) + 0.5);
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 16, right: 8, left: -12, bottom: 0 }}>
@@ -120,13 +120,15 @@ export function BodyweightChart({
         <XAxis dataKey="label" {...axis} minTickGap={24} />
         <YAxis {...axis} width={44} domain={[lo, hi]} allowDecimals={false} tickFormatter={(v) => formatNumber(v)} />
         <Tooltip content={<WeightTooltip unit={unit} />} cursor={{ stroke: "var(--border)" }} />
-        <ReferenceLine
-          y={goal}
-          stroke="var(--chart-2)"
-          strokeDasharray="6 4"
-          strokeWidth={1.5}
-          label={{ value: `Goal ${formatNumber(goal, 1)}`, position: "insideTopRight", fill: "var(--chart-2)", fontSize: 11 }}
-        />
+        {goal != null && (
+          <ReferenceLine
+            y={goal}
+            stroke="var(--chart-2)"
+            strokeDasharray="6 4"
+            strokeWidth={1.5}
+            label={{ value: `Goal ${formatNumber(goal, 1)}`, position: "insideTopRight", fill: "var(--chart-2)", fontSize: 11 }}
+          />
+        )}
         <Line dataKey="weight" stroke="none" dot={{ r: 2.5, fill: "var(--muted-foreground)", strokeWidth: 0 }} isAnimationActive={false} />
         <Line
           type="monotone"

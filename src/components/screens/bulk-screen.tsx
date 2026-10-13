@@ -14,7 +14,7 @@ import { EmptyState, PageHeader } from "@/components/page-header";
 import { BodyweightChart } from "@/components/charts";
 import { useBulkOverview, useSettings } from "@/hooks/use-data";
 import type { BulkDay, BulkOverview } from "@/lib/db/queries";
-import { addIntake, deleteDailyLog, updateDailyLog } from "@/lib/db/repo";
+import { addIntake, deleteDailyLog, updateDailyLog, updateSettings } from "@/lib/db/repo";
 import type { Settings } from "@/lib/db/types";
 import { cn, formatNumber, parseDayKey } from "@/lib/utils";
 
@@ -24,13 +24,23 @@ export function BulkScreen() {
   const overview = useBulkOverview();
   const settings = useSettings();
   const [editing, setEditing] = React.useState<BulkDay | null>(null);
+  const [editingGoal, setEditingGoal] = React.useState(false);
+  const { goalWeight, unit } = settings;
 
   return (
     <div className="space-y-5">
-      <PageHeader subtitle={`Goal ${formatNumber(settings.goalWeight, 1)} ${settings.unit}`} title="Bulk" />
+      <PageHeader
+        subtitle={goalWeight == null ? "Weight, intake and training" : `Goal ${formatNumber(goalWeight, 1)} ${unit}`}
+        title="Bulk"
+        action={
+          <Button variant="secondary" size="sm" onClick={() => setEditingGoal(true)}>
+            <Target /> {goalWeight == null ? "Set goal" : "Goal"}
+          </Button>
+        }
+      />
       {overview && (
         <>
-          <GoalCard overview={overview} settings={settings} />
+          <GoalCard overview={overview} settings={settings} onSetGoal={() => setEditingGoal(true)} />
           <TodayCard day={overview.today} settings={settings} onEdit={() => setEditing(overview.today)} />
           <WeekCard week={overview.week} settings={settings} onEdit={setEditing} />
           <TrendCard overview={overview} settings={settings} />
@@ -38,27 +48,34 @@ export function BulkScreen() {
         </>
       )}
       <DayEditor day={editing} settings={settings} onClose={() => setEditing(null)} />
+      <GoalEditor
+        open={editingGoal}
+        settings={settings}
+        suggested={overview?.currentWeight ?? null}
+        onClose={() => setEditingGoal(false)}
+      />
     </div>
   );
 }
 
-function GoalCard({ overview, settings }: { overview: BulkOverview; settings: Settings }) {
+function GoalCard({ overview, settings, onSetGoal }: { overview: BulkOverview; settings: Settings; onSetGoal: () => void }) {
   const { startWeight, currentWeight, latestWeight, ratePerWeek } = overview;
   const { goalWeight: goal, unit } = settings;
 
   if (currentWeight == null || startWeight == null) {
     return (
       <EmptyState icon={<Scale />} title="Weigh in to start tracking">
-        Log your bodyweight below. Weigh in most mornings and your trend toward {formatNumber(goal, 1)} {unit} shows up here.
+        Log your bodyweight below. Weigh in most mornings and your trend
+        {goal == null ? "" : ` toward ${formatNumber(goal, 1)} ${unit}`} shows up here.
       </EmptyState>
     );
   }
 
-  const toGo = goal - currentWeight;
-  const reached = toGo <= 0;
-  const span = goal - startWeight;
+  const toGo = goal == null ? null : goal - currentWeight;
+  const reached = toGo != null && toGo <= 0;
+  const span = goal == null ? 0 : goal - startWeight;
   const pct = reached ? 100 : span > 0 ? Math.min(100, Math.max(0, ((currentWeight - startWeight) / span) * 100)) : 0;
-  const weeksLeft = !reached && ratePerWeek && ratePerWeek > 0.02 ? toGo / ratePerWeek : null;
+  const weeksLeft = toGo != null && !reached && ratePerWeek && ratePerWeek > 0.02 ? toGo / ratePerWeek : null;
   const eta = weeksLeft != null ? new Date(parseDayKey(overview.weighIns.at(-1)!.date).getTime() + weeksLeft * 7 * 86400000) : null;
 
   return (
@@ -77,9 +94,15 @@ function GoalCard({ overview, settings }: { overview: BulkOverview; settings: Se
             )}
           </div>
           <div className="text-right">
-            <div className="flex items-center justify-end gap-1 text-sm font-semibold text-primary">
-              <Target className="size-4" /> {reached ? "Goal reached" : `${formatNumber(toGo, 1)} ${unit} to go`}
-            </div>
+            {toGo == null ? (
+              <button className="flex items-center justify-end gap-1 text-sm font-semibold text-primary" onClick={onSetGoal}>
+                <Target className="size-4" /> Set a goal
+              </button>
+            ) : (
+              <div className="flex items-center justify-end gap-1 text-sm font-semibold text-primary">
+                <Target className="size-4" /> {reached ? "Goal reached" : `${formatNumber(toGo, 1)} ${unit} to go`}
+              </div>
+            )}
             <div className="mt-1 text-xs text-muted-foreground tabular">
               {ratePerWeek == null
                 ? "Need more weigh-ins for a rate"
@@ -92,19 +115,21 @@ function GoalCard({ overview, settings }: { overview: BulkOverview; settings: Se
             )}
           </div>
         </div>
-        <div className="mt-4">
-          <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+        {goal != null && (
+          <div className="mt-4">
+            <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="mt-1.5 flex justify-between text-[11px] text-muted-foreground tabular">
+              <span>
+                Start {formatNumber(startWeight, 1)} {unit}
+              </span>
+              <span>
+                Goal {formatNumber(goal, 1)} {unit}
+              </span>
+            </div>
           </div>
-          <div className="mt-1.5 flex justify-between text-[11px] text-muted-foreground tabular">
-            <span>
-              Start {formatNumber(startWeight, 1)} {unit}
-            </span>
-            <span>
-              Goal {formatNumber(goal, 1)} {unit}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
     </Card>
   );
@@ -256,7 +281,7 @@ function TrendCard({ overview, settings }: { overview: BulkOverview; settings: S
   }));
   return (
     <Card className="p-4">
-      <div className="text-sm text-muted-foreground">Trend vs goal</div>
+      <div className="text-sm text-muted-foreground">{settings.goalWeight == null ? "Bodyweight trend" : "Trend vs goal"}</div>
       <div className="mt-3">
         <BodyweightChart data={data} goal={settings.goalWeight} unit={settings.unit} />
       </div>
@@ -381,6 +406,70 @@ function DayForm({ day, settings, onDone }: { day: BulkDay; settings: Settings; 
             }}
           >
             <Trash2 />
+          </Button>
+        )}
+        <Button size="lg" className="flex-1" onClick={save}>
+          Save
+        </Button>
+      </DrawerFooter>
+    </>
+  );
+}
+
+function GoalEditor({
+  open,
+  settings,
+  suggested,
+  onClose,
+}: {
+  open: boolean;
+  settings: Settings;
+  suggested: number | null;
+  onClose: () => void;
+}) {
+  return (
+    <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
+      <DrawerContent>{open && <GoalForm settings={settings} suggested={suggested} onDone={onClose} />}</DrawerContent>
+    </Drawer>
+  );
+}
+
+function GoalForm({ settings, suggested, onDone }: { settings: Settings; suggested: number | null; onDone: () => void }) {
+  const [goal, setGoal] = React.useState(settings.goalWeight == null ? "" : String(settings.goalWeight));
+
+  async function save() {
+    const g = parseFloat(goal.replace(",", "."));
+    await updateSettings({ goalWeight: Number.isFinite(g) && g > 0 ? Math.round(g * 10) / 10 : null });
+    onDone();
+  }
+
+  return (
+    <>
+      <DrawerHeader>
+        <DrawerTitle>Goal bodyweight</DrawerTitle>
+        <DrawerDescription>The weight you are working toward. Leave it empty to just track your trend.</DrawerDescription>
+      </DrawerHeader>
+      <div className="space-y-1.5 px-4">
+        <Label htmlFor="goal">Goal ({settings.unit})</Label>
+        <Input
+          id="goal"
+          inputMode="decimal"
+          placeholder={suggested == null ? "e.g. 75" : `Now ${formatNumber(suggested, 1)}`}
+          value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+          className="h-12 text-lg"
+        />
+      </div>
+      <DrawerFooter className="flex-row">
+        {settings.goalWeight != null && (
+          <Button
+            variant="ghost"
+            onClick={async () => {
+              await updateSettings({ goalWeight: null });
+              onDone();
+            }}
+          >
+            Remove goal
           </Button>
         )}
         <Button size="lg" className="flex-1" onClick={save}>

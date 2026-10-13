@@ -12,7 +12,7 @@ A mobile-first workout logger built as an installable, offline-capable PWA.
 - **PR detection**: a set that beats your best estimated 1RM (Epley) is flagged with a trophy and a toast.
 - **Exercise library**: 44 built-in exercises, filter by muscle group, add custom ones.
 - **Progress**: weekly volume chart, estimated 1RM trend per exercise, recent PRs, per-exercise records and history.
-- **Bulk log**: daily bodyweight, protein and mass gainer, with training days taken from logged workouts (or marked by hand). Shows the 7-day average weight against your goal (80 kg by default, set in Settings), the weekly gain rate and a projected date.
+- **Bulk log**: daily bodyweight, protein and mass gainer, with training days taken from logged workouts (or marked by hand). Shows the 7-day average weight against a goal weight you set yourself (on the Bulk screen or in Settings, or none), the weekly gain rate and a projected date.
 - **History**: workouts grouped by month, with a detail sheet and delete.
 - **Installable PWA**: manifest, icons and a service worker; the app loads and navigates with no connection.
 - **Backup**: export / import all data as JSON, sample data loader, erase all.

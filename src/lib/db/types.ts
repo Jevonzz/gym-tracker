@@ -73,8 +73,8 @@ export interface Settings {
   unit: Unit;
   restSeconds: number;
   autoRest: boolean;
-  /** Bulking goal bodyweight */
-  goalWeight: number;
+  /** Target bodyweight, null until the user sets one */
+  goalWeight: number | null;
   /** Daily protein target in grams */
   proteinTarget: number;
   /** Daily mass gainer servings target */
@@ -85,7 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   unit: "kg",
   restSeconds: 90,
   autoRest: true,
-  goalWeight: 80,
+  goalWeight: null,
   proteinTarget: 160,
   gainerTarget: 1,
 };
