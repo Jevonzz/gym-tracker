@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Beef, Check, CupSoda, Dumbbell, Minus, Plus, Scale, Target, Trash2 } from "lucide-react";
+import { Beef, Check, CupSoda, Dumbbell, Flame, Minus, Plus, Scale, Target, Trash2, Utensils, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,14 @@ import { Card } from "@/components/ui/card";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { BodyweightChart } from "@/components/charts";
-import { useBulkOverview, useSettings } from "@/hooks/use-data";
+import { useBulkOverview, useFoods, useSettings } from "@/hooks/use-data";
 import type { BulkDay, BulkOverview } from "@/lib/db/queries";
-import { addIntake, deleteDailyLog, updateDailyLog, updateSettings } from "@/lib/db/repo";
-import type { Settings } from "@/lib/db/types";
+import { addIntake, deleteDailyLog, deleteFood, deleteFoodEntry, logFood, saveFood, updateDailyLog, updateSettings } from "@/lib/db/repo";
+import type { FoodEntry, Settings } from "@/lib/db/types";
 import { cn, formatNumber, parseDayKey } from "@/lib/utils";
 
 const PROTEIN_STEP = 25;
@@ -25,6 +26,7 @@ export function BulkScreen() {
   const settings = useSettings();
   const [editing, setEditing] = React.useState<BulkDay | null>(null);
   const [editingGoal, setEditingGoal] = React.useState(false);
+  const [addingFoodFor, setAddingFoodFor] = React.useState<string | null>(null);
   const { goalWeight, unit } = settings;
 
   return (
@@ -41,13 +43,27 @@ export function BulkScreen() {
       {overview && (
         <>
           <GoalCard overview={overview} settings={settings} onSetGoal={() => setEditingGoal(true)} />
-          <TodayCard day={overview.today} settings={settings} onEdit={() => setEditing(overview.today)} />
+          <TodayCard
+            day={overview.today}
+            settings={settings}
+            onEdit={() => setEditing(overview.today)}
+            onAddFood={() => setAddingFoodFor(overview.today.date)}
+          />
           <WeekCard week={overview.week} settings={settings} onEdit={setEditing} />
           <TrendCard overview={overview} settings={settings} />
           <HistoryList history={overview.history} settings={settings} onEdit={setEditing} />
         </>
       )}
-      <DayEditor day={editing} settings={settings} onClose={() => setEditing(null)} />
+      <DayEditor
+        day={editing && overview ? (overview.history.find((d) => d.date === editing.date) ?? editing) : editing}
+        settings={settings}
+        onClose={() => setEditing(null)}
+        onAddFood={(date) => {
+          setEditing(null);
+          setAddingFoodFor(date);
+        }}
+      />
+      <FoodDrawer date={addingFoodFor} onClose={() => setAddingFoodFor(null)} />
       <GoalEditor
         open={editingGoal}
         settings={settings}
@@ -135,8 +151,8 @@ function GoalCard({ overview, settings, onSetGoal }: { overview: BulkOverview; s
   );
 }
 
-function TodayCard({ day, settings, onEdit }: { day: BulkDay; settings: Settings; onEdit: () => void }) {
-  const { unit, proteinTarget, gainerTarget } = settings;
+function TodayCard({ day, settings, onEdit, onAddFood }: { day: BulkDay; settings: Settings; onEdit: () => void; onAddFood: () => void }) {
+  const { unit, proteinTarget, gainerTarget, calorieTarget } = settings;
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
@@ -155,20 +171,35 @@ function TodayCard({ day, settings, onEdit }: { day: BulkDay; settings: Settings
           onClick={day.workouts > 0 ? undefined : () => updateDailyLog(day.date, { trained: !day.trained })}
         />
         <Tile
-          icon={<Beef />}
-          label="Protein"
-          value={`${formatNumber(day.protein)} / ${formatNumber(proteinTarget)} g`}
-          done={day.protein >= proteinTarget}
-          progress={day.protein / proteinTarget}
+          icon={<Flame />}
+          label="Calories"
+          value={
+            calorieTarget == null
+              ? `${formatNumber(day.totalKcal)} kcal`
+              : `${formatNumber(day.totalKcal)} / ${formatNumber(calorieTarget)}`
+          }
+          done={calorieTarget != null && day.totalKcal >= calorieTarget}
+          progress={calorieTarget == null ? undefined : day.totalKcal / calorieTarget}
         />
         <Tile
+          icon={<Beef />}
+          label="Protein"
+          value={`${formatNumber(day.totalProtein)} / ${formatNumber(proteinTarget)} g`}
+          done={day.totalProtein >= proteinTarget}
+          progress={day.totalProtein / proteinTarget}
+        />
+        <Tile
+          className="col-span-2"
           icon={<CupSoda />}
           label="Mass gainer"
-          value={`${formatNumber(day.gainer, 1)} / ${formatNumber(gainerTarget, 1)}`}
+          value={`${formatNumber(day.gainer, 1)} / ${formatNumber(gainerTarget, 1)} servings`}
           done={day.gainer >= gainerTarget}
           progress={day.gainer / gainerTarget}
         />
       </div>
+      <Button className="w-full" onClick={onAddFood}>
+        <Utensils /> Add food
+      </Button>
       <div className="grid grid-cols-2 gap-2">
         <Button variant="outline" onClick={() => addIntake(day.date, { protein: PROTEIN_STEP })}>
           <Plus /> {PROTEIN_STEP} g protein
@@ -183,7 +214,27 @@ function TodayCard({ day, settings, onEdit }: { day: BulkDay; settings: Settings
           <Plus /> 1 gainer shake
         </Button>
       </div>
+      <FoodEntryList entries={day.entries} />
     </Card>
+  );
+}
+
+function FoodEntryList({ entries }: { entries: FoodEntry[] }) {
+  if (!entries.length) return null;
+  return (
+    <ul className="divide-y divide-border/60 rounded-xl bg-muted/40">
+      {entries.map((e) => (
+        <li key={e.id} className="flex items-center gap-3 py-2 pr-1 pl-3">
+          <span className="min-w-0 flex-1 truncate text-sm">{e.name}</span>
+          <span className="text-xs text-muted-foreground tabular">
+            {formatNumber(e.kcal)} kcal · {formatNumber(e.protein)} g
+          </span>
+          <Button variant="ghost" size="icon-sm" aria-label={`Remove ${e.name}`} onClick={() => deleteFoodEntry(e.id)}>
+            <X />
+          </Button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -194,7 +245,9 @@ function Tile({
   done,
   progress,
   onClick,
+  className,
 }: {
+  className?: string;
   icon: React.ReactNode;
   label: string;
   value: string;
@@ -210,6 +263,7 @@ function Tile({
         "relative overflow-hidden rounded-xl bg-muted/60 p-3 text-left [&_svg]:size-4",
         onClick && "active:bg-accent",
         done && "bg-primary/15",
+        className,
       )}
     >
       {progress != null && !done && (
@@ -226,7 +280,8 @@ function Tile({
 
 function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Settings; onEdit: (d: BulkDay) => void }) {
   const trainingDays = week.filter((d) => d.isTrainingDay).length;
-  const avgProtein = week.reduce((a, d) => a + d.protein, 0) / week.length;
+  const avgProtein = week.reduce((a, d) => a + d.totalProtein, 0) / week.length;
+  const avgKcal = week.reduce((a, d) => a + d.totalKcal, 0) / week.length;
   const shakes = week.reduce((a, d) => a + d.gainer, 0);
   return (
     <Card className="p-4">
@@ -246,8 +301,8 @@ function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Setti
                 {date.getDate()}
               </span>
               <span
-                className={cn("size-1.5 rounded-full bg-transparent", d.protein >= settings.proteinTarget && "bg-chart-2")}
-                aria-label={d.protein >= settings.proteinTarget ? "Protein target hit" : undefined}
+                className={cn("size-1.5 rounded-full bg-transparent", d.totalProtein >= settings.proteinTarget && "bg-chart-2")}
+                aria-label={d.totalProtein >= settings.proteinTarget ? "Protein target hit" : undefined}
               />
             </button>
           );
@@ -256,7 +311,11 @@ function WeekCard({ week, settings, onEdit }: { week: BulkDay[]; settings: Setti
       <div className="mt-3 grid grid-cols-3 divide-x divide-border/60 rounded-xl bg-muted/40 py-3 text-center">
         <Stat label="Training days" value={trainingDays} />
         <Stat label="Avg protein (g)" value={formatNumber(avgProtein)} />
-        <Stat label="Gainer shakes" value={formatNumber(shakes, 1)} />
+        {avgKcal > 0 ? (
+          <Stat label="Avg kcal" value={formatNumber(avgKcal)} />
+        ) : (
+          <Stat label="Gainer shakes" value={formatNumber(shakes, 1)} />
+        )}
       </div>
       <p className="mt-2 text-[11px] text-muted-foreground">Filled days are training days. A blue dot means the protein target was hit.</p>
     </Card>
@@ -302,7 +361,8 @@ function HistoryList({ history, settings, onEdit }: { history: BulkDay[]; settin
               {parseDayKey(d.date).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
             </div>
             <div className="flex-1 text-xs text-muted-foreground tabular">
-              {formatNumber(d.protein)} g protein · {formatNumber(d.gainer, 1)} gainer
+              {d.totalKcal > 0 && `${formatNumber(d.totalKcal)} kcal · `}
+              {formatNumber(d.totalProtein)} g protein · {formatNumber(d.gainer, 1)} gainer
               {d.isTrainingDay && <span className="ml-1.5 text-primary">· trained</span>}
             </div>
             <div className="text-sm font-semibold tabular">{d.weight == null ? "—" : `${formatNumber(d.weight, 1)} ${settings.unit}`}</div>
@@ -318,15 +378,27 @@ function HistoryList({ history, settings, onEdit }: { history: BulkDay[]; settin
   );
 }
 
-function DayEditor({ day, settings, onClose }: { day: BulkDay | null; settings: Settings; onClose: () => void }) {
+function DayEditor({
+  day,
+  settings,
+  onClose,
+  onAddFood,
+}: {
+  day: BulkDay | null;
+  settings: Settings;
+  onClose: () => void;
+  onAddFood: (date: string) => void;
+}) {
   return (
     <Drawer open={!!day} onOpenChange={(open) => !open && onClose()}>
-      <DrawerContent>{day && <DayForm key={day.date} day={day} settings={settings} onDone={onClose} />}</DrawerContent>
+      <DrawerContent>
+        {day && <DayForm key={day.date} day={day} settings={settings} onDone={onClose} onAddFood={() => onAddFood(day.date)} />}
+      </DrawerContent>
     </Drawer>
   );
 }
 
-function DayForm({ day, settings, onDone }: { day: BulkDay; settings: Settings; onDone: () => void }) {
+function DayForm({ day, settings, onDone, onAddFood }: { day: BulkDay; settings: Settings; onDone: () => void; onAddFood: () => void }) {
   const [weight, setWeight] = React.useState(day.weight == null ? "" : String(day.weight));
   const [protein, setProtein] = React.useState(String(day.protein || ""));
   const [gainer, setGainer] = React.useState(day.gainer);
@@ -364,13 +436,22 @@ function DayForm({ day, settings, onDone }: { day: BulkDay; settings: Settings; 
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="protein">Protein (g)</Label>
+          <Label htmlFor="protein">Extra protein (g)</Label>
           <div className="flex gap-2">
             <Input id="protein" inputMode="numeric" placeholder="0" value={protein} onChange={(e) => setProtein(e.target.value)} />
             <Button variant="outline" onClick={() => setProtein(String((parseFloat(protein) || 0) + PROTEIN_STEP))}>
               +{PROTEIN_STEP}
             </Button>
           </div>
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label>Food · {formatNumber(day.entries.reduce((a, e) => a + e.kcal, 0))} kcal</Label>
+            <Button variant="outline" size="sm" onClick={onAddFood}>
+              <Utensils /> Add food
+            </Button>
+          </div>
+          <FoodEntryList entries={day.entries} />
         </div>
         <div className="flex items-center justify-between">
           <Label>Mass gainer servings</Label>
@@ -475,6 +556,115 @@ function GoalForm({ settings, suggested, onDone }: { settings: Settings; suggest
         <Button size="lg" className="flex-1" onClick={save}>
           Save
         </Button>
+      </DrawerFooter>
+    </>
+  );
+}
+
+function FoodDrawer({ date, onClose }: { date: string | null; onClose: () => void }) {
+  return (
+    <Drawer open={!!date} onOpenChange={(o) => !o && onClose()}>
+      <DrawerContent>{date && <FoodForm date={date} onDone={onClose} />}</DrawerContent>
+    </Drawer>
+  );
+}
+
+function FoodForm({ date, onDone }: { date: string; onDone: () => void }) {
+  const foods = useFoods();
+  const [tab, setTab] = React.useState<"saved" | "quick">("saved");
+  const [name, setName] = React.useState("");
+  const [kcal, setKcal] = React.useState("");
+  const [protein, setProtein] = React.useState("");
+  const [remember, setRemember] = React.useState(true);
+  const mode = foods?.length === 0 ? "quick" : tab;
+
+  async function quickAdd() {
+    const k = Math.max(0, Math.round(parseFloat(kcal) || 0));
+    const p = Math.max(0, Math.round(parseFloat(protein) || 0));
+    if (!k && !p) {
+      toast.error("Enter calories or protein");
+      return;
+    }
+    const label = name.trim();
+    await logFood(date, { name: label, kcal: k, protein: p });
+    if (remember && label) await saveFood({ name: label, kcal: k, protein: p });
+    toast.success(`Added ${label || "food"}`);
+    onDone();
+  }
+
+  return (
+    <>
+      <DrawerHeader>
+        <DrawerTitle>Add food</DrawerTitle>
+        <DrawerDescription>
+          {parseDayKey(date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+        </DrawerDescription>
+      </DrawerHeader>
+      <div className="px-4">
+        <Segmented
+          className="w-full"
+          value={mode}
+          onChange={setTab}
+          options={[
+            { value: "saved", label: "My foods" },
+            { value: "quick", label: "Quick add" },
+          ]}
+        />
+      </div>
+      {mode === "saved" ? (
+        <ul className="mt-3 max-h-[50dvh] divide-y divide-border/60 overflow-y-auto px-4">
+          {foods?.map((f) => (
+            <li key={f.id} className="flex items-center gap-2">
+              <button
+                className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left active:opacity-70"
+                onClick={async () => {
+                  await logFood(date, { name: f.name, kcal: f.kcal, protein: f.protein, foodId: f.id });
+                  toast.success(`Added ${f.name}`);
+                  onDone();
+                }}
+              >
+                <Plus className="size-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1 truncate font-medium">{f.name}</span>
+                <span className="text-xs text-muted-foreground tabular">
+                  {formatNumber(f.kcal)} kcal · {formatNumber(f.protein)} g
+                </span>
+              </button>
+              <Button variant="ghost" size="icon-sm" aria-label={`Delete ${f.name}`} onClick={() => deleteFood(f.id)}>
+                <Trash2 />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-3 space-y-3 px-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="food-name">Name</Label>
+            <Input id="food-name" placeholder="e.g. Chicken rice" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="food-kcal">Calories (kcal)</Label>
+              <Input id="food-kcal" inputMode="numeric" placeholder="0" value={kcal} onChange={(e) => setKcal(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="food-protein">Protein (g)</Label>
+              <Input id="food-protein" inputMode="numeric" placeholder="0" value={protein} onChange={(e) => setProtein(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="remember">Save to My foods</Label>
+            <Switch id="remember" checked={remember} onCheckedChange={setRemember} />
+          </div>
+        </div>
+      )}
+      <DrawerFooter>
+        {mode === "quick" ? (
+          <Button size="lg" onClick={quickAdd}>
+            Add
+          </Button>
+        ) : (
+          <p className="text-center text-xs text-muted-foreground">Tap a food to add it. Use Quick add for anything new.</p>
+        )}
       </DrawerFooter>
     </>
   );

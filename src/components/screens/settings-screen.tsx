@@ -108,6 +108,33 @@ export function SettingsScreen() {
         <Row label="Daily protein target" hint="grams">
           <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
         </Row>
+        <Row label="Daily calorie target" hint="kcal, leave empty for none">
+          <NumberField
+            value={settings.calorieTarget}
+            step={50}
+            placeholder="None"
+            onCommit={(calorieTarget) => updateSettings({ calorieTarget })}
+            onClear={() => updateSettings({ calorieTarget: null })}
+          />
+        </Row>
+        <Row label="Gainer calories" hint="kcal per serving">
+          <NumberField
+            value={settings.gainerKcal || null}
+            step={10}
+            placeholder="0"
+            onCommit={(gainerKcal) => updateSettings({ gainerKcal })}
+            onClear={() => updateSettings({ gainerKcal: 0 })}
+          />
+        </Row>
+        <Row label="Gainer protein" hint="grams per serving">
+          <NumberField
+            value={settings.gainerProtein || null}
+            step={1}
+            placeholder="0"
+            onCommit={(gainerProtein) => updateSettings({ gainerProtein })}
+            onClear={() => updateSettings({ gainerProtein: 0 })}
+          />
+        </Row>
         <Row label="Daily mass gainer" hint="servings">
           <NumberField value={settings.gainerTarget} step={0.5} onCommit={(gainerTarget) => updateSettings({ gainerTarget })} />
         </Row>

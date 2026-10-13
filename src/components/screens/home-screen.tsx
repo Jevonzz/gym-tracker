@@ -192,9 +192,9 @@ function BulkBanner() {
         </div>
       </div>
       <div className="text-right text-xs text-muted-foreground tabular">
-        {formatNumber(bulk.today.protein)} / {formatNumber(proteinTarget)} g
+        {formatNumber(bulk.today.totalProtein)} / {formatNumber(proteinTarget)} g
         <br />
-        {formatNumber(bulk.today.gainer, 1)} gainer
+        {bulk.today.totalKcal > 0 ? `${formatNumber(bulk.today.totalKcal)} kcal` : `${formatNumber(bulk.today.gainer, 1)} gainer`}
       </div>
       <ChevronRight className="size-5 text-muted-foreground" />
     </Link>

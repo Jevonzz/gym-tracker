@@ -58,13 +58,35 @@ export interface DailyLog {
   date: string;
   /** Morning bodyweight, null if not weighed that day */
   weight: number | null;
-  /** Grams of protein eaten */
+  /** Extra grams of protein added by hand, on top of food entries and gainer */
   protein: number;
   /** Mass gainer servings */
   gainer: number;
   /** Marked as a training day by hand (days with a logged workout count automatically) */
   trained: boolean;
   updatedAt: number;
+}
+
+/** A food the user saved for one-tap logging. */
+export interface Food {
+  id: string;
+  name: string;
+  kcal: number;
+  /** grams */
+  protein: number;
+  createdAt: number;
+}
+
+/** One thing eaten on a day. Values are copied from the food so editing a saved food never rewrites history. */
+export interface FoodEntry {
+  id: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  name: string;
+  kcal: number;
+  protein: number;
+  foodId?: string;
+  createdAt: number;
 }
 
 export const emptyDailyLog = (date: string): DailyLog => ({ date, weight: null, protein: 0, gainer: 0, trained: false, updatedAt: 0 });
@@ -79,6 +101,11 @@ export interface Settings {
   proteinTarget: number;
   /** Daily mass gainer servings target */
   gainerTarget: number;
+  /** Daily calorie target, null for none */
+  calorieTarget: number | null;
+  /** Calories and protein in one gainer serving, counted into the day's totals */
+  gainerKcal: number;
+  gainerProtein: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -88,11 +115,14 @@ export const DEFAULT_SETTINGS: Settings = {
   goalWeight: null,
   proteinTarget: 160,
   gainerTarget: 1,
+  calorieTarget: null,
+  gainerKcal: 0,
+  gainerProtein: 0,
 };
 
 export interface BackupFile {
   app: "gym-tracker";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   exportedAt: number;
   exercises: Exercise[];
   workouts: Workout[];
@@ -101,5 +131,8 @@ export interface BackupFile {
   routines: Routine[];
   /** Added in version 2 */
   dailyLogs?: DailyLog[];
+  /** Added in version 3 */
+  foods?: Food[];
+  foodEntries?: FoodEntry[];
   settings: Settings;
 }
