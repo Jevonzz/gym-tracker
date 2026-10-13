@@ -98,8 +98,8 @@ export async function getWorkoutSummaries(limit?: number): Promise<WorkoutSummar
   });
 }
 
-export async function getDashboardStats() {
-  const weekStart = startOfWeek().getTime();
+export async function getDashboardStats(todayKey = dayKey()) {
+  const weekStart = startOfWeek(parseDayKey(todayKey)).getTime();
   const finished = await db.workouts.filter((w) => w.endedAt !== null).toArray();
   const thisWeek = finished.filter((w) => w.startedAt >= weekStart);
   const weekSets = await db.sets
@@ -111,7 +111,7 @@ export async function getDashboardStats() {
   // Weekly streak: consecutive weeks (ending this or last week) with at least one workout.
   const weeks = new Set(finished.map((w) => startOfWeek(new Date(w.startedAt)).getTime()));
   let streak = 0;
-  const cursor = startOfWeek();
+  const cursor = new Date(weekStart);
   if (!weeks.has(cursor.getTime())) cursor.setDate(cursor.getDate() - 7);
   while (weeks.has(cursor.getTime())) {
     streak++;
@@ -287,8 +287,7 @@ export interface BulkOverview {
   history: BulkDay[];
 }
 
-export async function getBulkOverview(): Promise<BulkOverview> {
-  const todayKey = dayKey();
+export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview> {
   const [logs, workouts, entries, settingsRow] = await Promise.all([
     db.dailyLogs.orderBy("date").toArray(),
     db.workouts.toArray(),

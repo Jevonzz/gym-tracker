@@ -253,7 +253,7 @@ function SetRow({ set, index, previous }: { set: SetEntry; index: number; previo
     if (res.completed) {
       navigator.vibrate?.(30);
       if (autoRest) start(restSeconds);
-      if (res.isPR) toast("New personal record! 🏆", { description: "Best estimated 1RM for this exercise." });
+      if (res.isPR) toast("New personal record! 🏆", { description: "Your best set yet for this exercise." });
     }
   }
 
