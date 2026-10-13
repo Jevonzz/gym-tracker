@@ -261,9 +261,14 @@ export function SettingsScreen() {
         </AlertDialog>
       </Group>
 
-      <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-        <Database className="size-3.5" /> Lift · local-first · v0.1
-      </p>
+      <div className="space-y-1 text-center text-xs text-muted-foreground">
+        <p className="flex items-center justify-center gap-1.5">
+          <Database className="size-3.5" /> Lift · local-first · v{process.env.NEXT_PUBLIC_APP_VERSION}
+        </p>
+        <p className="tabular">
+          Build {process.env.NEXT_PUBLIC_BUILD_COMMIT} · {process.env.NEXT_PUBLIC_BUILD_DATE}
+        </p>
+      </div>
     </div>
   );
 }
