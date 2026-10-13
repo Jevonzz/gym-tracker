@@ -96,8 +96,14 @@ export function SettingsScreen() {
       </Group>
 
       <Group title="Bulk">
-        <Row label="Goal bodyweight" hint={settings.unit}>
-          <NumberField value={settings.goalWeight} step={0.5} onCommit={(goalWeight) => updateSettings({ goalWeight })} />
+        <Row label="Goal bodyweight" hint={`${settings.unit}, leave empty for no goal`}>
+          <NumberField
+            value={settings.goalWeight}
+            step={0.5}
+            placeholder="None"
+            onCommit={(goalWeight) => updateSettings({ goalWeight })}
+            onClear={() => updateSettings({ goalWeight: null })}
+          />
         </Row>
         <Row label="Daily protein target" hint="grams">
           <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
@@ -188,12 +194,26 @@ export function SettingsScreen() {
 
 const noop = () => () => {};
 
-/** Numeric input that saves on blur / enter and ignores empty or non-positive values. */
-function NumberField({ value, step, onCommit }: { value: number; step: number; onCommit: (v: number) => void }) {
+/** Numeric input that saves on blur / enter. Emptying it calls `onClear` if given, otherwise it is ignored. */
+function NumberField({
+  value,
+  step,
+  placeholder,
+  onCommit,
+  onClear,
+}: {
+  value: number | null;
+  step: number;
+  placeholder?: string;
+  onCommit: (v: number) => void;
+  onClear?: () => void;
+}) {
   const [draft, setDraft] = React.useState<string | null>(null);
   function commit() {
-    const v = parseFloat((draft ?? "").replace(",", "."));
+    if (draft === null) return;
+    const v = parseFloat(draft.replace(",", "."));
     if (Number.isFinite(v) && v > 0 && v !== value) onCommit(v);
+    else if (draft.trim() === "" && value != null) onClear?.();
     setDraft(null);
   }
   return (
@@ -203,7 +223,8 @@ function NumberField({ value, step, onCommit }: { value: number; step: number; o
       step={step}
       min={0}
       className="w-24 text-right tabular"
-      value={draft ?? String(value)}
+      placeholder={placeholder}
+      value={draft ?? (value == null ? "" : String(value))}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
