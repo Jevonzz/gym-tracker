@@ -38,6 +38,12 @@ export function SettingsScreen() {
     () => false,
   );
   const [usage, setUsage] = React.useState<string | null>(null);
+  const [, rerender] = React.useReducer((n: number) => n + 1, 0);
+  const notify = React.useSyncExternalStore(
+    noop,
+    () => (typeof Notification === "undefined" ? "unsupported" : Notification.permission),
+    () => null,
+  );
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -90,6 +96,29 @@ export function SettingsScreen() {
         </Row>
         <Row label="Auto-start rest timer" hint="After you tick off a set">
           <Switch checked={settings.autoRest} onCheckedChange={(autoRest) => updateSettings({ autoRest })} />
+        </Row>
+        <Row label="Keep screen on" hint="While a workout is in progress, so the rest timer can beep">
+          <Switch checked={settings.keepAwake} onCheckedChange={(keepAwake) => updateSettings({ keepAwake })} />
+        </Row>
+        <Row label="Rest alerts" hint="Notify you when rest ends if you leave the app">
+          {notify === "granted" ? (
+            <span className="text-sm text-muted-foreground">On</span>
+          ) : notify === "denied" ? (
+            <span className="text-right text-xs text-muted-foreground">Blocked in phone settings</span>
+          ) : notify === "default" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                await Notification.requestPermission();
+                rerender();
+              }}
+            >
+              Turn on
+            </Button>
+          ) : (
+            <span className="text-right text-xs text-muted-foreground">Not supported here</span>
+          )}
         </Row>
         <Row label="Rest duration">
           <Segmented

@@ -106,6 +106,8 @@ export interface Settings {
   /** Calories and protein in one gainer serving, counted into the day's totals */
   gainerKcal: number;
   gainerProtein: number;
+  /** Keep the screen on while a workout is in progress */
+  keepAwake: boolean;
   /** Work out the protein and calorie targets from bodyweight and goal instead of the fixed values above */
   autoTargets: boolean;
 }
@@ -121,6 +123,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gainerKcal: 0,
   gainerProtein: 0,
   autoTargets: true,
+  keepAwake: true,
 };
 
 export interface BackupFile {

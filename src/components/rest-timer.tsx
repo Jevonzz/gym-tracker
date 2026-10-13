@@ -39,9 +39,47 @@ function beep() {
   navigator.vibrate?.([200, 100, 200]);
 }
 
+const STORAGE_KEY = "lift-rest-timer";
+
+/** Shows a system notification when rest ends while the app is in the background (needs permission). */
+async function notifyRestOver() {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted" || document.visibilityState === "visible") return;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    const options = { body: "Time for your next set.", tag: "rest-timer", icon: "/icons/icon-192.png" };
+    if (reg) await reg.showNotification("Rest over", options);
+    else new Notification("Rest over", options);
+  } catch {}
+}
+
+function loadSaved(): { endsAt: number; total: number } | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as { endsAt: number; total: number } | null;
+    return saved && saved.endsAt > Date.now() ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
 export function RestTimerProvider({ children }: { children: React.ReactNode }) {
-  const [endsAt, setEndsAt] = React.useState<number | null>(null);
-  const [total, setTotal] = React.useState(0);
+  // Survive the app being closed or reloaded mid-rest. Nothing renders from this until the clock ticks, so hydration stays stable.
+  const [saved] = React.useState(loadSaved);
+  const [endsAt, setEndsAt] = React.useState<number | null>(saved?.endsAt ?? null);
+  const [total, setTotal] = React.useState(saved?.total ?? 0);
+  React.useEffect(() => {
+    try {
+      if (endsAt) localStorage.setItem(STORAGE_KEY, JSON.stringify({ endsAt, total }));
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }, [endsAt, total]);
+
+  // A real timeout as well as the on-screen tick, so the alert fires on time even if rendering is paused.
+  React.useEffect(() => {
+    if (!endsAt) return;
+    const t = setTimeout(notifyRestOver, Math.max(0, endsAt - Date.now()));
+    return () => clearTimeout(t);
+  }, [endsAt]);
 
   const value = React.useMemo<RestTimerState>(
     () => ({

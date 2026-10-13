@@ -40,3 +40,26 @@ export function useToday() {
   }, []);
   return today;
 }
+
+/** Holds a screen wake lock while `enabled` and the page is visible (the browser drops it when hidden). */
+export function useWakeLock(enabled: boolean) {
+  React.useEffect(() => {
+    if (!enabled || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const acquire = async () => {
+      if (document.visibilityState !== "visible" || (lock && !lock.released)) return;
+      try {
+        lock = await navigator.wakeLock.request("screen");
+        if (cancelled) lock.release();
+      } catch {}
+    };
+    acquire();
+    document.addEventListener("visibilitychange", acquire);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", acquire);
+      lock?.release().catch(() => {});
+    };
+  }, [enabled]);
+}
