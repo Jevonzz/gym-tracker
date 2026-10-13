@@ -5,8 +5,18 @@
  */
 import { db } from "./dexie";
 import { SEED_EXERCISES, seedId } from "./seed";
-import { DEFAULT_SETTINGS, type BackupFile, type Equipment, type MuscleGroup, type SetEntry, type Settings, type Workout } from "./types";
-import { e1rm, uid } from "@/lib/utils";
+import {
+  DEFAULT_SETTINGS,
+  emptyDailyLog,
+  type BackupFile,
+  type DailyLog,
+  type Equipment,
+  type MuscleGroup,
+  type SetEntry,
+  type Settings,
+  type Workout,
+} from "./types";
+import { addDays, dayKey, e1rm, uid } from "@/lib/utils";
 import { getPreviousSets } from "./queries";
 
 let seeding: Promise<void> | null = null;
@@ -219,31 +229,68 @@ export async function deleteRoutine(id: string) {
   await db.routines.delete(id);
 }
 
+/* ---------------------------------- bulk log --------------------------------- */
+
+export type DailyLogPatch = Partial<Pick<DailyLog, "weight" | "protein" | "gainer" | "trained">>;
+
+export async function updateDailyLog(date: string, patch: DailyLogPatch) {
+  await db.transaction("rw", db.dailyLogs, async () => {
+    const current = (await db.dailyLogs.get(date)) ?? emptyDailyLog(date);
+    await db.dailyLogs.put({ ...current, ...patch, date, updatedAt: Date.now() });
+  });
+}
+
+/** Adds to today's (or another day's) protein / gainer totals, never going below zero. */
+export async function addIntake(date: string, add: { protein?: number; gainer?: number }) {
+  await db.transaction("rw", db.dailyLogs, async () => {
+    const current = (await db.dailyLogs.get(date)) ?? emptyDailyLog(date);
+    await db.dailyLogs.put({
+      ...current,
+      protein: Math.max(0, current.protein + (add.protein ?? 0)),
+      gainer: Math.max(0, current.gainer + (add.gainer ?? 0)),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+export async function deleteDailyLog(date: string) {
+  await db.dailyLogs.delete(date);
+}
+
 /* ------------------------------- backup & reset ------------------------------- */
 
 export async function exportData(): Promise<BackupFile> {
   return {
     app: "gym-tracker",
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
     exercises: await db.exercises.toArray(),
     workouts: await db.workouts.toArray(),
     workoutExercises: await db.workoutExercises.toArray(),
     sets: await db.sets.toArray(),
     routines: await db.routines.toArray(),
+    dailyLogs: await db.dailyLogs.toArray(),
     settings: await getSettings(),
   };
 }
 
 export async function importData(data: BackupFile) {
-  if (data?.app !== "gym-tracker" || data.version !== 1) throw new Error("Not a Gym Tracker backup file.");
-  await db.transaction("rw", [db.exercises, db.workouts, db.workoutExercises, db.sets, db.routines, db.kv], async () => {
-    await Promise.all([db.exercises.clear(), db.workouts.clear(), db.workoutExercises.clear(), db.sets.clear(), db.routines.clear()]);
+  if (data?.app !== "gym-tracker" || (data.version !== 1 && data.version !== 2)) throw new Error("Not a Gym Tracker backup file.");
+  await db.transaction("rw", [db.exercises, db.workouts, db.workoutExercises, db.sets, db.routines, db.dailyLogs, db.kv], async () => {
+    await Promise.all([
+      db.exercises.clear(),
+      db.workouts.clear(),
+      db.workoutExercises.clear(),
+      db.sets.clear(),
+      db.routines.clear(),
+      db.dailyLogs.clear(),
+    ]);
     await db.exercises.bulkPut(data.exercises);
     await db.workouts.bulkPut(data.workouts);
     await db.workoutExercises.bulkPut(data.workoutExercises);
     await db.sets.bulkPut(data.sets);
     await db.routines.bulkPut(data.routines);
+    await db.dailyLogs.bulkPut(data.dailyLogs ?? []);
     await db.kv.put({ key: "settings", value: data.settings });
     await db.kv.put({ key: "seeded", value: true });
   });
@@ -333,4 +380,24 @@ export async function loadDemoData() {
       }
     }
   }
+
+  // Bulk log: weigh-ins creeping up from ~72 kg, daily protein and gainer, workouts count as training days.
+  const today = dayKey();
+  const existing = new Set(await db.dailyLogs.toCollection().primaryKeys());
+  const logs: DailyLog[] = [];
+  for (let i = 41; i >= 0; i--) {
+    const date = addDays(today, -i);
+    if (existing.has(date)) continue;
+    const t = 41 - i;
+    const noise = Math.sin(t * 2.1) * 0.35 + Math.cos(t * 0.7) * 0.2;
+    logs.push({
+      date,
+      weight: t % 3 === 2 ? null : Math.round((72 + t * 0.06 + noise) * 10) / 10,
+      protein: 120 + ((t * 37) % 70),
+      gainer: t % 5 === 4 ? 0 : 1 + (t % 4 === 0 ? 1 : 0),
+      trained: false,
+      updatedAt: Date.now(),
+    });
+  }
+  await db.dailyLogs.bulkPut(logs);
 }

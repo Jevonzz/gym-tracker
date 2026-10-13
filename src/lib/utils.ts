@@ -42,3 +42,21 @@ export function startOfWeek(d = new Date()) {
   date.setDate(date.getDate() - day);
   return date;
 }
+
+/** Local calendar day as "YYYY-MM-DD". */
+export function dayKey(d: Date | number = new Date()) {
+  const date = new Date(d);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Local midnight for a "YYYY-MM-DD" key. */
+export function parseDayKey(key: string) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function addDays(key: string, n: number) {
+  const date = parseDayKey(key);
+  date.setDate(date.getDate() + n);
+  return dayKey(date);
+}

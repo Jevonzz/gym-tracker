@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/use-data";
@@ -94,6 +95,18 @@ export function SettingsScreen() {
         </Row>
       </Group>
 
+      <Group title="Bulk">
+        <Row label="Goal bodyweight" hint={settings.unit}>
+          <NumberField value={settings.goalWeight} step={0.5} onCommit={(goalWeight) => updateSettings({ goalWeight })} />
+        </Row>
+        <Row label="Daily protein target" hint="grams">
+          <NumberField value={settings.proteinTarget} step={5} onCommit={(proteinTarget) => updateSettings({ proteinTarget })} />
+        </Row>
+        <Row label="Daily mass gainer" hint="servings">
+          <NumberField value={settings.gainerTarget} step={0.5} onCommit={(gainerTarget) => updateSettings({ gainerTarget })} />
+        </Row>
+      </Group>
+
       <Group title="Appearance">
         <Row label="Theme">
           {mounted && (
@@ -146,7 +159,9 @@ export function SettingsScreen() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Erase everything?</AlertDialogTitle>
-              <AlertDialogDescription>All workouts, custom exercises and routines on this device will be deleted.</AlertDialogDescription>
+              <AlertDialogDescription>
+                All workouts, custom exercises, routines and your bulk log on this device will be deleted.
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -172,6 +187,29 @@ export function SettingsScreen() {
 }
 
 const noop = () => () => {};
+
+/** Numeric input that saves on blur / enter and ignores empty or non-positive values. */
+function NumberField({ value, step, onCommit }: { value: number; step: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+  function commit() {
+    const v = parseFloat((draft ?? "").replace(",", "."));
+    if (Number.isFinite(v) && v > 0 && v !== value) onCommit(v);
+    setDraft(null);
+  }
+  return (
+    <Input
+      type="number"
+      inputMode="decimal"
+      step={step}
+      min={0}
+      className="w-24 text-right tabular"
+      value={draft ?? String(value)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+    />
+  );
+}
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
