@@ -1,6 +1,19 @@
 "use client";
 
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { formatNumber } from "@/lib/utils";
 
@@ -57,6 +70,74 @@ export function VolumeChart({ data, unit, height = 200 }: { data: { label: strin
         <Tooltip content={<ChartTooltip unit={unit} />} cursor={{ fill: "var(--accent)", opacity: 0.5 }} />
         <Bar dataKey="volume" fill="var(--chart-1)" radius={[6, 6, 2, 2]} maxBarSize={28} isAnimationActive={false} />
       </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function WeightTooltip({
+  active,
+  payload,
+  label,
+  unit,
+}: {
+  active?: boolean;
+  payload?: { payload: { weight: number; avg: number } }[];
+  label?: string;
+  unit: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const { weight, avg } = payload[0].payload;
+  return (
+    <div className="rounded-xl border border-border/60 bg-popover px-3 py-2 text-xs shadow-lg">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="text-sm font-bold tabular">
+        {formatNumber(weight, 1)} {unit}
+      </div>
+      <div className="text-muted-foreground tabular">7-day avg {formatNumber(avg, 1)}</div>
+    </div>
+  );
+}
+
+/** Daily weigh-ins as dots, the 7-day average as a line, and the goal as a dashed rule. */
+export function BodyweightChart({
+  data,
+  goal,
+  unit,
+  height = 220,
+}: {
+  data: { label: string; weight: number; avg: number }[];
+  goal: number;
+  unit: string;
+  height?: number;
+}) {
+  const values = data.map((d) => d.weight);
+  const lo = Math.floor(Math.min(...values, goal) - 1);
+  const hi = Math.ceil(Math.max(...values, goal) + 0.5);
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 16, right: 8, left: -12, bottom: 0 }}>
+        <CartesianGrid vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" {...axis} minTickGap={24} />
+        <YAxis {...axis} width={44} domain={[lo, hi]} allowDecimals={false} tickFormatter={(v) => formatNumber(v)} />
+        <Tooltip content={<WeightTooltip unit={unit} />} cursor={{ stroke: "var(--border)" }} />
+        <ReferenceLine
+          y={goal}
+          stroke="var(--chart-2)"
+          strokeDasharray="6 4"
+          strokeWidth={1.5}
+          label={{ value: `Goal ${formatNumber(goal, 1)}`, position: "insideTopRight", fill: "var(--chart-2)", fontSize: 11 }}
+        />
+        <Line dataKey="weight" stroke="none" dot={{ r: 2.5, fill: "var(--muted-foreground)", strokeWidth: 0 }} isAnimationActive={false} />
+        <Line
+          type="monotone"
+          dataKey="avg"
+          stroke="var(--chart-1)"
+          strokeWidth={2.5}
+          dot={false}
+          activeDot={{ r: 5 }}
+          isAnimationActive={false}
+        />
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }

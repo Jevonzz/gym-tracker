@@ -1,7 +1,7 @@
 /** Read models. Each function is a plain async query, wrapped by hooks in `hooks/use-data.ts`. */
 import { db } from "./dexie";
-import type { Exercise, SetEntry, Workout, WorkoutExercise } from "./types";
-import { e1rm, startOfWeek } from "@/lib/utils";
+import { emptyDailyLog, type DailyLog, type Exercise, type SetEntry, type Workout, type WorkoutExercise } from "./types";
+import { addDays, dayKey, e1rm, parseDayKey, startOfWeek } from "@/lib/utils";
 
 export async function getActiveWorkout() {
   return (await db.workouts.filter((w) => w.endedAt === null).first()) ?? null;
@@ -237,4 +237,100 @@ export async function getRoutines() {
   const [routines, exercises] = await Promise.all([db.routines.orderBy("name").toArray(), db.exercises.toArray()]);
   const byId = new Map(exercises.map((e) => [e.id, e]));
   return routines.map((r) => ({ ...r, exercises: r.exerciseIds.map((id) => byId.get(id)).filter((e): e is Exercise => !!e) }));
+}
+
+/* ---------------------------------- bulk log --------------------------------- */
+
+export interface BulkDay extends DailyLog {
+  /** Finished workouts started that day */
+  workouts: number;
+  /** Logged workout or marked by hand */
+  isTrainingDay: boolean;
+}
+
+export interface WeighIn {
+  date: string;
+  weight: number;
+  /** Mean of weigh-ins in the 7 days ending on this date, smooths out water swings */
+  avg: number;
+}
+
+export interface BulkOverview {
+  today: BulkDay;
+  /** The last 7 days, oldest first, ending today */
+  week: BulkDay[];
+  /** Every weigh-in, oldest first */
+  weighIns: WeighIn[];
+  startWeight: number | null;
+  /** Latest 7-day average */
+  currentWeight: number | null;
+  latestWeight: number | null;
+  /** Gain per week from a straight-line fit over the last 28 days, null with too little data */
+  ratePerWeek: number | null;
+  /** Days with something logged (or a workout), newest first */
+  history: BulkDay[];
+}
+
+export async function getBulkOverview(): Promise<BulkOverview> {
+  const todayKey = dayKey();
+  const [logs, workouts] = await Promise.all([db.dailyLogs.orderBy("date").toArray(), db.workouts.toArray()]);
+
+  const workoutsByDay = new Map<string, number>();
+  for (const w of workouts) {
+    if (w.endedAt === null) continue;
+    const k = dayKey(w.startedAt);
+    workoutsByDay.set(k, (workoutsByDay.get(k) ?? 0) + 1);
+  }
+  const logByDay = new Map(logs.map((l) => [l.date, l]));
+  const dayView = (date: string): BulkDay => {
+    const log = logByDay.get(date) ?? emptyDailyLog(date);
+    const count = workoutsByDay.get(date) ?? 0;
+    return { ...log, workouts: count, isTrainingDay: count > 0 || log.trained };
+  };
+
+  const weighed = logs.filter((l): l is DailyLog & { weight: number } => l.weight != null && l.weight > 0);
+  const weighIns: WeighIn[] = weighed.map((l, i) => {
+    const from = addDays(l.date, -6);
+    let sum = 0;
+    let n = 0;
+    for (let j = i; j >= 0 && weighed[j].date >= from; j--) {
+      sum += weighed[j].weight;
+      n++;
+    }
+    return { date: l.date, weight: l.weight, avg: Math.round((sum / n) * 100) / 100 };
+  });
+
+  const days = new Set([...logByDay.keys(), ...workoutsByDay.keys()]);
+  const history = [...days]
+    .filter((d) => d <= todayKey)
+    .sort()
+    .reverse()
+    .map(dayView);
+
+  return {
+    today: dayView(todayKey),
+    week: Array.from({ length: 7 }, (_, i) => dayView(addDays(todayKey, i - 6))),
+    weighIns,
+    startWeight: weighIns[0]?.weight ?? null,
+    currentWeight: weighIns.at(-1)?.avg ?? null,
+    latestWeight: weighIns.at(-1)?.weight ?? null,
+    ratePerWeek: weeklyRate(weighIns.filter((w) => w.date >= addDays(todayKey, -27))),
+    history,
+  };
+}
+
+/** Least-squares slope of weight over time, in units per week. */
+function weeklyRate(points: WeighIn[]) {
+  if (points.length < 3) return null;
+  const xs = points.map((p) => parseDayKey(p.date).getTime() / 86400000);
+  if (xs.at(-1)! - xs[0] < 6) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = points.reduce((a, p) => a + p.weight, 0) / points.length;
+  let num = 0;
+  let den = 0;
+  xs.forEach((x, i) => {
+    num += (x - mx) * (points[i].weight - my);
+    den += (x - mx) ** 2;
+  });
+  return den ? (num / den) * 7 : null;
 }

@@ -1,8 +1,8 @@
 /* Lift service worker: makes the app load and navigate fully offline.
  * All user data lives in IndexedDB, so only the app shell needs caching. */
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE = `lift-${VERSION}`;
-const PAGES = ["/", "/workout", "/history", "/exercises", "/exercises/detail", "/progress", "/settings"];
+const PAGES = ["/", "/workout", "/history", "/exercises", "/exercises/detail", "/progress", "/bulk", "/settings"];
 const STATIC = ["/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 // Pull the JS/CSS each page references so they work offline before ever being visited.

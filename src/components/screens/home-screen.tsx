@@ -3,14 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Flame, Play, Plus, Settings, Sparkles } from "lucide-react";
+import { ChevronRight, Flame, Play, Plus, Scale, Settings, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { WorkoutCard } from "@/components/workout-card";
-import { useActiveWorkout, useDashboardStats, useRoutines, useSettings, useWorkoutSummaries } from "@/hooks/use-data";
+import { useActiveWorkout, useBulkOverview, useDashboardStats, useRoutines, useSettings, useWorkoutSummaries } from "@/hooks/use-data";
 import { loadDemoData, startWorkout } from "@/lib/db/repo";
 import { useNow } from "@/hooks/use-now";
 import { cn, formatDuration, formatNumber } from "@/lib/utils";
@@ -50,6 +50,8 @@ export function HomeScreen() {
       />
 
       {active && <ActiveBanner startedAt={active.startedAt} name={active.name} />}
+
+      <BulkBanner />
 
       <Card className="overflow-hidden p-0">
         <div className="bg-gradient-to-br from-primary/15 via-transparent to-transparent p-4">
@@ -162,6 +164,37 @@ function ActiveBanner({ startedAt, name }: { startedAt: number; name: string }) 
       </div>
       <div className="text-lg font-bold tabular">{now ? formatDuration(now - startedAt) : ""}</div>
       <ChevronRight className="size-5" />
+    </Link>
+  );
+}
+
+function BulkBanner() {
+  const bulk = useBulkOverview();
+  const { goalWeight, unit, proteinTarget } = useSettings();
+  if (!bulk) return null;
+  const current = bulk.currentWeight;
+  const toGo = current == null ? null : goalWeight - current;
+  return (
+    <Link href="/bulk" className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 active:bg-accent/60">
+      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+        <Scale className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium text-muted-foreground">
+          Bulk to {formatNumber(goalWeight, 1)} {unit}
+        </div>
+        <div className="truncate font-semibold tabular">
+          {current == null
+            ? "Log your first weigh-in"
+            : `${formatNumber(current, 1)} ${unit} · ${toGo! <= 0 ? "goal reached" : `${formatNumber(toGo!, 1)} to go`}`}
+        </div>
+      </div>
+      <div className="text-right text-xs text-muted-foreground tabular">
+        {formatNumber(bulk.today.protein)} / {formatNumber(proteinTarget)} g
+        <br />
+        {formatNumber(bulk.today.gainer, 1)} gainer
+      </div>
+      <ChevronRight className="size-5 text-muted-foreground" />
     </Link>
   );
 }

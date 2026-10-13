@@ -52,22 +52,54 @@ export interface Routine {
   createdAt: number;
 }
 
+/** One row per calendar day (local time) for the bulking log. */
+export interface DailyLog {
+  /** "YYYY-MM-DD" */
+  date: string;
+  /** Morning bodyweight, null if not weighed that day */
+  weight: number | null;
+  /** Grams of protein eaten */
+  protein: number;
+  /** Mass gainer servings */
+  gainer: number;
+  /** Marked as a training day by hand (days with a logged workout count automatically) */
+  trained: boolean;
+  updatedAt: number;
+}
+
+export const emptyDailyLog = (date: string): DailyLog => ({ date, weight: null, protein: 0, gainer: 0, trained: false, updatedAt: 0 });
+
 export interface Settings {
   unit: Unit;
   restSeconds: number;
   autoRest: boolean;
+  /** Bulking goal bodyweight */
+  goalWeight: number;
+  /** Daily protein target in grams */
+  proteinTarget: number;
+  /** Daily mass gainer servings target */
+  gainerTarget: number;
 }
 
-export const DEFAULT_SETTINGS: Settings = { unit: "kg", restSeconds: 90, autoRest: true };
+export const DEFAULT_SETTINGS: Settings = {
+  unit: "kg",
+  restSeconds: 90,
+  autoRest: true,
+  goalWeight: 80,
+  proteinTarget: 160,
+  gainerTarget: 1,
+};
 
 export interface BackupFile {
   app: "gym-tracker";
-  version: 1;
+  version: 1 | 2;
   exportedAt: number;
   exercises: Exercise[];
   workouts: Workout[];
   workoutExercises: WorkoutExercise[];
   sets: SetEntry[];
   routines: Routine[];
+  /** Added in version 2 */
+  dailyLogs?: DailyLog[];
   settings: Settings;
 }
