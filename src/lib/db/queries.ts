@@ -100,16 +100,21 @@ export async function getWorkoutSummaries(limit?: number): Promise<WorkoutSummar
 
 export async function getDashboardStats(todayKey = dayKey()) {
   const weekStart = startOfWeek(parseDayKey(todayKey)).getTime();
-  const finished = await db.workouts.filter((w) => w.endedAt !== null).toArray();
+  const [finished, trainedLogs] = await Promise.all([
+    db.workouts.filter((w) => w.endedAt !== null).toArray(),
+    db.dailyLogs.filter((l) => l.trained).toArray(),
+  ]);
   const thisWeek = finished.filter((w) => w.startedAt >= weekStart);
+  // A day counts as trained with a finished workout or a one-tap "trained" mark.
+  const trainedStarts = [...finished.map((w) => w.startedAt), ...trainedLogs.map((l) => parseDayKey(l.date).getTime())];
   const weekSets = await db.sets
     .where("workoutId")
     .anyOf(thisWeek.map((w) => w.id))
     .filter((s) => s.completed)
     .toArray();
 
-  // Weekly streak: consecutive weeks (ending this or last week) with at least one workout.
-  const weeks = new Set(finished.map((w) => startOfWeek(new Date(w.startedAt)).getTime()));
+  // Weekly streak: consecutive weeks (ending this or last week) with at least one training day.
+  const weeks = new Set(trainedStarts.map((t) => startOfWeek(new Date(t)).getTime()));
   let streak = 0;
   const cursor = new Date(weekStart);
   if (!weeks.has(cursor.getTime())) cursor.setDate(cursor.getDate() - 7);
@@ -123,12 +128,13 @@ export async function getDashboardStats(todayKey = dayKey()) {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + i);
     const next = d.getTime() + 86400000;
-    return { date: d, trained: finished.some((w) => w.startedAt >= d.getTime() && w.startedAt < next) };
+    return { date: d, trained: trainedStarts.some((t) => t >= d.getTime() && t < next) };
   });
 
   return {
     total: finished.length,
     weekCount: thisWeek.length,
+    weekTrainedDays: days.filter((d) => d.trained).length,
     weekVolume: weekSets.reduce((v, s) => v + (s.weight ?? 0) * (s.reps ?? 0), 0),
     weekSets: weekSets.length,
     streak,

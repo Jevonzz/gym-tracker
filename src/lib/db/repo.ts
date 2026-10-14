@@ -323,13 +323,31 @@ export async function deleteRoutine(id: string) {
 
 /* ---------------------------------- bulk log --------------------------------- */
 
-export type DailyLogPatch = Partial<Pick<DailyLog, "weight" | "protein" | "gainer" | "trained">>;
+export type DailyLogPatch = Partial<Pick<DailyLog, "weight" | "protein" | "gainer" | "trained" | "trainedAs">>;
 
 export async function updateDailyLog(date: string, patch: DailyLogPatch) {
   await db.transaction("rw", db.dailyLogs, async () => {
     const current = (await db.dailyLogs.get(date)) ?? emptyDailyLog(date);
     await db.dailyLogs.put({ ...current, ...patch, date, updatedAt: Date.now() });
   });
+}
+
+/** One-tap training log: ticks a type (e.g. "Push") on or off for the day. The day counts as trained while any type is ticked. */
+export async function toggleTrainingType(date: string, type: string) {
+  await db.transaction("rw", db.dailyLogs, async () => {
+    const current = (await db.dailyLogs.get(date)) ?? emptyDailyLog(date);
+    const list = current.trainedAs ?? [];
+    const trainedAs = list.includes(type) ? list.filter((t) => t !== type) : [...list, type];
+    await db.dailyLogs.put({ ...current, trainedAs, trained: trainedAs.length > 0, updatedAt: Date.now() });
+  });
+}
+
+/** Adds a custom option to the one-tap training log. */
+export async function addTrainingType(type: string) {
+  const name = type.trim();
+  const { trainingTypes } = await getSettings();
+  if (!name || trainingTypes.some((t) => t.toLowerCase() === name.toLowerCase())) return;
+  await updateSettings({ trainingTypes: [...trainingTypes, name] });
 }
 
 /** Adds to today's (or another day's) protein / gainer totals, never going below zero. */

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ChevronLeft, Database, Download, HardDrive, RotateCcw, Sparkles, Upload } from "lucide-react";
+import { ChevronLeft, Database, Download, HardDrive, RotateCcw, Sparkles, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -129,6 +129,29 @@ export function SettingsScreen() {
         </Row>
       </Group>
 
+      <Group title="Training log">
+        <div className="space-y-2 px-4 py-3">
+          <div>
+            <div className="text-sm font-medium">Quick options</div>
+            <div className="text-xs text-muted-foreground">What you can tick on Home. Add new ones with + there.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {settings.trainingTypes.map((t) => (
+              <span key={t} className="flex h-8 items-center gap-1 rounded-full bg-muted pr-1 pl-3 text-xs font-medium">
+                {t}
+                <button
+                  aria-label={`Remove ${t}`}
+                  className="flex size-6 items-center justify-center rounded-full text-muted-foreground active:bg-accent"
+                  onClick={() => updateSettings({ trainingTypes: settings.trainingTypes.filter((x) => x !== t) })}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      </Group>
+
       <Group title="Bulk">
         <Row label="Goal bodyweight" hint={`${settings.unit}, leave empty for no goal`}>
           <NumberField
@@ -166,7 +189,7 @@ export function SettingsScreen() {
             </Row>
           </>
         )}
-        <Row label="Gainer calories" hint="kcal per serving">
+        <Row label="Gainer calories" hint="kcal per serving (also editable when you log a shake)">
           <NumberField
             value={settings.gainerKcal || null}
             step={10}

@@ -64,6 +64,8 @@ export interface DailyLog {
   gainer: number;
   /** Marked as a training day by hand (days with a logged workout count automatically) */
   trained: boolean;
+  /** What was trained that day, e.g. "Push" or "Basketball". Optional, from the one-tap log on Home. */
+  trainedAs?: string[];
   updatedAt: number;
 }
 
@@ -106,10 +108,14 @@ export interface Settings {
   /** Calories and protein in one gainer serving, counted into the day's totals */
   gainerKcal: number;
   gainerProtein: number;
+  /** Your gainer's name, e.g. "Serious Mass", empty for the default label */
+  gainerName: string;
   /** Keep the screen on while a workout is in progress */
   keepAwake: boolean;
   /** Work out the protein and calorie targets from bodyweight and goal instead of the fixed values above */
   autoTargets: boolean;
+  /** Options for the one-tap "trained today" log */
+  trainingTypes: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -122,8 +128,10 @@ export const DEFAULT_SETTINGS: Settings = {
   calorieTarget: null,
   gainerKcal: 0,
   gainerProtein: 0,
+  gainerName: "",
   autoTargets: true,
   keepAwake: true,
+  trainingTypes: ["Push", "Pull", "Legs", "Upper", "Lower", "Full body", "Cardio", "Basketball"],
 };
 
 export interface BackupFile {
