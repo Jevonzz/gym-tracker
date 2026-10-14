@@ -155,31 +155,40 @@ function BulkBanner() {
   const bulk = useBulkOverview();
   const { goalWeight, unit } = useSettings();
   if (!bulk) return null;
-  const current = bulk.currentWeight;
+  const { weekAvg, prevWeekAvg } = bulk;
+  const current = weekAvg ?? bulk.currentWeight;
   const toGo = current == null || goalWeight == null ? null : goalWeight - current;
+  const change = weekAvg != null && prevWeekAvg != null ? weekAvg - prevWeekAvg : null;
   return (
-    <Link href="/bulk" className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 active:bg-accent/60">
-      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-        <Scale className="size-5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-xs font-medium text-muted-foreground">
-          {goalWeight == null ? "Bulk" : `Bulk to ${formatNumber(goalWeight, 1)} ${unit}`}
+    <Link href="/bulk" className="block rounded-2xl border border-border/60 bg-card p-4 active:bg-accent/60">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+          <Scale className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium text-muted-foreground">
+            {weekAvg != null ? "This week's average" : goalWeight == null ? "Bulk" : `Bulk to ${formatNumber(goalWeight, 1)} ${unit}`}
+          </div>
+          <div className="truncate text-lg font-bold tabular">
+            {current == null ? "Log your first weigh-in" : `${formatNumber(current, 1)} ${unit}`}
+          </div>
         </div>
-        <div className="truncate font-semibold tabular">
-          {current == null
-            ? "Log your first weigh-in"
-            : toGo == null
-              ? `${formatNumber(current, 1)} ${unit} · set a goal`
-              : `${formatNumber(current, 1)} ${unit} · ${toGo <= 0 ? "goal reached" : `${formatNumber(toGo, 1)} to go`}`}
-        </div>
+        {change != null && (
+          <div className={cn("text-right text-sm font-semibold tabular", change > 0 ? "text-primary" : "text-muted-foreground")}>
+            {change > 0 ? "+" : change < 0 ? "−" : "±"}
+            {formatNumber(Math.abs(change), 1)} {unit}
+            <div className="text-[11px] font-normal text-muted-foreground">vs last week</div>
+          </div>
+        )}
+        <ChevronRight className="size-5 text-muted-foreground" />
       </div>
-      <div className="text-right text-xs text-muted-foreground tabular">
-        {formatNumber(bulk.today.totalProtein)} / {formatNumber(bulk.targets.protein)} g
-        <br />
-        {bulk.today.totalKcal > 0 ? `${formatNumber(bulk.today.totalKcal)} kcal` : `${formatNumber(bulk.today.gainer, 1)} gainer`}
+      <div className="mt-3 flex justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground tabular">
+        <span>{toGo == null ? (goalWeight == null ? "No goal set" : "") : toGo <= 0 ? "Goal reached" : `${formatNumber(toGo, 1)} ${unit} to goal`}</span>
+        <span>
+          {formatNumber(bulk.today.totalProtein)} / {formatNumber(bulk.targets.protein)} g protein
+          {bulk.today.totalKcal > 0 && ` · ${formatNumber(bulk.today.totalKcal)} kcal`}
+        </span>
       </div>
-      <ChevronRight className="size-5 text-muted-foreground" />
     </Link>
   );
 }

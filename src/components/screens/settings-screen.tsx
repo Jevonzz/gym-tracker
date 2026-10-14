@@ -22,8 +22,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
+import { useLiveQuery } from "dexie-react-hooks";
+
 import { useBulkOverview, useSettings } from "@/hooks/use-data";
-import { changeUnit, exportData, importData, loadDemoData, resetAllData, updateSettings } from "@/lib/db/repo";
+import { useNow } from "@/hooks/use-now";
+import { changeUnit, exportData, getLastBackup, importData, loadDemoData, markBackedUp, resetAllData, updateSettings } from "@/lib/db/repo";
 import type { BackupFile, Unit } from "@/lib/db/types";
 
 export function SettingsScreen() {
@@ -45,6 +48,8 @@ export function SettingsScreen() {
     () => null,
   );
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const lastBackup = useLiveQuery(getLastBackup);
+  const now = useNow(60_000);
 
   React.useEffect(() => {
     navigator.storage?.estimate?.().then((e) => e.usage != null && setUsage(`${(e.usage / 1024 / 1024).toFixed(1)} MB`));
@@ -52,14 +57,26 @@ export function SettingsScreen() {
 
   async function doExport() {
     const data = await exportData();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gym-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Backup downloaded");
+    const name = `lift-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const file = new File([JSON.stringify(data, null, 2)], name, { type: "application/json" });
+    // On a phone, the share sheet can save straight to Files, Google Drive or a chat with yourself.
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "Lift backup" });
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        throw e;
+      }
+    } else {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    await markBackedUp();
+    toast.success("Backup saved");
   }
 
   async function doImport(file: File) {
@@ -232,11 +249,17 @@ export function SettingsScreen() {
         <div className="flex gap-3 p-4 text-sm text-muted-foreground">
           <HardDrive className="mt-0.5 size-4 shrink-0" />
           <p>
-            Everything is stored on this device and works offline{usage ? ` (${usage} used)` : ""}. Export a backup now and then, since
-            clearing browser data removes it.
+            Everything is stored on this device and works offline{usage ? ` (${usage} used)` : ""}. Back up now and then to Files or
+            Drive, since a lost phone or cleared browser data removes it.
           </p>
         </div>
-        <ActionRow icon={<Download />} label="Export backup" onClick={doExport} />
+        <ActionRow
+          icon={<Download />}
+          label="Back up now"
+          hint={lastBackup === undefined || !now ? undefined : backupAge(lastBackup, now)}
+          warn={lastBackup !== undefined && !!now && (lastBackup == null || now - lastBackup > 30 * 86400000)}
+          onClick={doExport}
+        />
         <ActionRow icon={<Upload />} label="Import backup" onClick={() => fileRef.current?.click()} />
         <input
           ref={fileRef}
@@ -360,16 +383,25 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 function ActionRow({
   icon,
   label,
+  hint,
+  warn,
   destructive,
   ...props
-}: React.ComponentProps<"button"> & { icon: React.ReactNode; label: string; destructive?: boolean }) {
+}: React.ComponentProps<"button"> & { icon: React.ReactNode; label: string; hint?: string; warn?: boolean; destructive?: boolean }) {
   return (
     <button
       className={`flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm font-medium active:bg-accent [&_svg]:size-4 ${destructive ? "text-destructive" : ""}`}
       {...props}
     >
       {icon}
-      {label}
+      <span className="flex-1">{label}</span>
+      {hint && <span className={`text-xs font-normal ${warn ? "text-amber-500" : "text-muted-foreground"}`}>{hint}</span>}
     </button>
   );
+}
+
+function backupAge(at: number | null, now: number) {
+  if (at == null) return "Never backed up";
+  const days = Math.max(0, Math.floor((now - at) / 86400000));
+  return days === 0 ? "Last: today" : days === 1 ? "Last: yesterday" : `Last: ${days} days ago`;
 }

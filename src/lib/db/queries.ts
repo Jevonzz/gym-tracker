@@ -287,6 +287,9 @@ export interface BulkOverview {
   /** Latest 7-day average */
   currentWeight: number | null;
   latestWeight: number | null;
+  /** Mean weigh-in over the 7 days ending today, and over the 7 days before that */
+  weekAvg: number | null;
+  prevWeekAvg: number | null;
   /** Gain per week from a straight-line fit over the last 28 days, null with too little data */
   ratePerWeek: number | null;
   /** Days with something logged (or a workout), newest first */
@@ -347,8 +350,8 @@ export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview
       workouts: count,
       isTrainingDay: count > 0 || log.trained,
       entries: food,
-      totalProtein: log.protein + log.gainer * gainerProtein + food.reduce((a, e) => a + e.protein, 0),
-      totalKcal: log.gainer * gainerKcal + food.reduce((a, e) => a + e.kcal, 0),
+      totalProtein: log.protein + log.gainer * (log.gainerProtein ?? gainerProtein) + food.reduce((a, e) => a + e.protein, 0),
+      totalKcal: log.gainer * (log.gainerKcal ?? gainerKcal) + food.reduce((a, e) => a + e.kcal, 0),
     };
   };
 
@@ -384,10 +387,16 @@ export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview
     startWeight: weighIns[0]?.weight ?? null,
     currentWeight,
     latestWeight: weighIns.at(-1)?.weight ?? null,
+    weekAvg: mean(weighIns.filter((w) => w.date > addDays(todayKey, -7) && w.date <= todayKey)),
+    prevWeekAvg: mean(weighIns.filter((w) => w.date > addDays(todayKey, -14) && w.date <= addDays(todayKey, -7))),
     ratePerWeek: weeklyRate(weighIns.filter((w) => w.date >= addDays(todayKey, -27))),
     history,
     targets,
   };
+}
+
+function mean(points: WeighIn[]) {
+  return points.length ? Math.round((points.reduce((a, p) => a + p.weight, 0) / points.length) * 100) / 100 : null;
 }
 
 /** Least-squares slope of weight over time, in units per week. */

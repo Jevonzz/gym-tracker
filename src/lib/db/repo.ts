@@ -51,7 +51,23 @@ export async function getSettings(): Promise<Settings> {
 
 export async function updateSettings(patch: Partial<Settings>) {
   const current = await getSettings();
-  await db.kv.put({ key: "settings", value: { ...current, ...patch } });
+  const gainerChanged =
+    (patch.gainerKcal !== undefined && patch.gainerKcal !== current.gainerKcal) ||
+    (patch.gainerProtein !== undefined && patch.gainerProtein !== current.gainerProtein);
+  await db.transaction("rw", [db.kv, db.dailyLogs], async () => {
+    // Freeze the old gainer values onto past days first, so a new brand only counts from now on.
+    // Skipped when no values were set before, so shakes logged at 0 kcal pick up the first real values.
+    if (gainerChanged && (current.gainerKcal > 0 || current.gainerProtein > 0)) await snapshotGainer(current, (l) => l.gainerKcal === undefined && l.gainer > 0);
+    await db.kv.put({ key: "settings", value: { ...current, ...patch } });
+  });
+}
+
+/** Stores the given per-serving gainer values on matching days. */
+async function snapshotGainer(settings: Settings, match: (l: DailyLog) => boolean) {
+  await db.dailyLogs.filter(match).modify((l) => {
+    l.gainerKcal = settings.gainerKcal;
+    l.gainerProtein = settings.gainerProtein;
+  });
 }
 
 const KG_PER_LB = 0.45359237;
@@ -326,9 +342,16 @@ export async function deleteRoutine(id: string) {
 export type DailyLogPatch = Partial<Pick<DailyLog, "weight" | "protein" | "gainer" | "trained" | "trainedAs">>;
 
 export async function updateDailyLog(date: string, patch: DailyLogPatch) {
+  const settings = await getSettings();
   await db.transaction("rw", db.dailyLogs, async () => {
     const current = (await db.dailyLogs.get(date)) ?? emptyDailyLog(date);
-    await db.dailyLogs.put({ ...current, ...patch, date, updatedAt: Date.now() });
+    const next = { ...current, ...patch, date, updatedAt: Date.now() };
+    // A day's first gainer takes today's per-serving values with it.
+    if (next.gainer > 0 && next.gainerKcal === undefined) {
+      next.gainerKcal = settings.gainerKcal;
+      next.gainerProtein = settings.gainerProtein;
+    }
+    await db.dailyLogs.put(next);
   });
 }
 
@@ -352,12 +375,15 @@ export async function addTrainingType(type: string) {
 
 /** Adds to today's (or another day's) protein / gainer totals, never going below zero. */
 export async function addIntake(date: string, add: { protein?: number; gainer?: number }) {
+  const settings = await getSettings();
   await db.transaction("rw", db.dailyLogs, async () => {
     const current = (await db.dailyLogs.get(date)) ?? emptyDailyLog(date);
     await db.dailyLogs.put({
       ...current,
       protein: Math.max(0, current.protein + (add.protein ?? 0)),
       gainer: Math.max(0, current.gainer + (add.gainer ?? 0)),
+      // Logging a shake uses the gainer as set right now for the whole day.
+      ...(add.gainer ? { gainerKcal: settings.gainerKcal, gainerProtein: settings.gainerProtein } : {}),
       updatedAt: Date.now(),
     });
   });
@@ -404,6 +430,15 @@ export async function logFood(date: string, input: FoodInput & { foodId?: string
 
 export async function deleteFoodEntry(id: string) {
   await db.foodEntries.delete(id);
+}
+
+/** Remembers when the last backup was made, shown in Settings. */
+export async function markBackedUp() {
+  await db.kv.put({ key: "lastBackup", value: Date.now() });
+}
+
+export async function getLastBackup() {
+  return ((await db.kv.get("lastBackup"))?.value as number | undefined) ?? null;
 }
 
 /* ------------------------------- backup & reset ------------------------------- */

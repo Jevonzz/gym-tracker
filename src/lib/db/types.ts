@@ -62,6 +62,9 @@ export interface DailyLog {
   protein: number;
   /** Mass gainer servings */
   gainer: number;
+  /** Gainer kcal / protein per serving when this day was logged, so changing brand later leaves past days alone */
+  gainerKcal?: number;
+  gainerProtein?: number;
   /** Marked as a training day by hand (days with a logged workout count automatically) */
   trained: boolean;
   /** What was trained that day, e.g. "Push" or "Basketball". Optional, from the one-tap log on Home. */
