@@ -15,6 +15,7 @@ import {
   type MuscleGroup,
   type SetEntry,
   type Settings,
+  type SportSession,
   type Workout,
 } from "./types";
 import { addDays, dayKey, e1rm, uid } from "@/lib/utils";
@@ -388,12 +389,38 @@ export async function deleteFoodEntry(id: string) {
   await db.foodEntries.delete(id);
 }
 
+/* ----------------------------------- sports ---------------------------------- */
+
+export type SportSessionInput = Omit<SportSession, "id" | "createdAt">;
+
+/** Creates a sport session, or replaces the one with `id`. Empty stats and blank notes are dropped. */
+export async function saveSportSession(input: SportSessionInput, id?: string) {
+  const stats = Object.fromEntries(Object.entries(input.stats).filter(([, v]) => Number.isFinite(v) && v >= 0));
+  const notes = input.notes?.trim() || undefined;
+  const title = input.title?.trim() || undefined;
+  const existing = id ? await db.sportSessions.get(id) : undefined;
+  const session: SportSession = {
+    ...input,
+    stats,
+    notes,
+    title,
+    id: existing?.id ?? uid(),
+    createdAt: existing?.createdAt ?? Date.now(),
+  };
+  await db.sportSessions.put(session);
+  return session.id;
+}
+
+export async function deleteSportSession(id: string) {
+  await db.sportSessions.delete(id);
+}
+
 /* ------------------------------- backup & reset ------------------------------- */
 
 export async function exportData(): Promise<BackupFile> {
   return {
     app: "gym-tracker",
-    version: 3,
+    version: 4,
     exportedAt: Date.now(),
     exercises: await db.exercises.toArray(),
     workouts: await db.workouts.toArray(),
@@ -403,15 +430,16 @@ export async function exportData(): Promise<BackupFile> {
     dailyLogs: await db.dailyLogs.toArray(),
     foods: await db.foods.toArray(),
     foodEntries: await db.foodEntries.toArray(),
+    sportSessions: await db.sportSessions.toArray(),
     settings: await getSettings(),
   };
 }
 
 export async function importData(data: BackupFile) {
-  if (data?.app !== "gym-tracker" || ![1, 2, 3].includes(data.version)) throw new Error("Not a Gym Tracker backup file.");
+  if (data?.app !== "gym-tracker" || ![1, 2, 3, 4].includes(data.version)) throw new Error("Not a Gym Tracker backup file.");
   await db.transaction(
     "rw",
-    [db.exercises, db.workouts, db.workoutExercises, db.sets, db.routines, db.dailyLogs, db.foods, db.foodEntries, db.kv],
+    [db.exercises, db.workouts, db.workoutExercises, db.sets, db.routines, db.dailyLogs, db.foods, db.foodEntries, db.sportSessions, db.kv],
     async () => {
       await Promise.all([
         db.exercises.clear(),
@@ -422,6 +450,7 @@ export async function importData(data: BackupFile) {
         db.dailyLogs.clear(),
         db.foods.clear(),
         db.foodEntries.clear(),
+        db.sportSessions.clear(),
       ]);
       await db.exercises.bulkPut(data.exercises);
       await db.workouts.bulkPut(data.workouts);
@@ -431,6 +460,7 @@ export async function importData(data: BackupFile) {
       await db.dailyLogs.bulkPut(data.dailyLogs ?? []);
       await db.foods.bulkPut(data.foods ?? []);
       await db.foodEntries.bulkPut(data.foodEntries ?? []);
+      await db.sportSessions.bulkPut(data.sportSessions ?? []);
       await db.kv.put({ key: "settings", value: data.settings });
       await db.kv.put({ key: "seeded", value: true });
     },
@@ -543,6 +573,30 @@ export async function loadDemoData() {
     });
   }
   await db.dailyLogs.bulkPut(logs);
+
+  // Basketball sessions between gym days, with shooting slowly getting better.
+  if ((await db.sportSessions.count()) === 0) {
+    const kinds = ["Shooting practice", "Skills training", "Pickup game"];
+    for (let i = 0; i < 8; i++) {
+      const kind = kinds[i % kinds.length];
+      const startedAt = Math.round(last - (7 - i) * 5 * day - day);
+      const ftAtt = 30 + (i % 3) * 5;
+      const fg3Att = 40;
+      await saveSportSession({
+        sport: "basketball",
+        kind,
+        startedAt,
+        durationMin: kind === "Pickup game" ? 90 : 60,
+        effort: kind === "Pickup game" ? 4 : 3,
+        distance: null,
+        drills: kind === "Shooting practice" ? ["Form shooting", "Free throws", "Three-pointers"] : ["Ball handling", "Layups", "Footwork"],
+        stats:
+          kind === "Pickup game"
+            ? { points: 12 + i, rebounds: 4 + (i % 3), assists: 3 }
+            : { "ft.made": Math.round(ftAtt * (0.62 + i * 0.02)), "ft.attempted": ftAtt, "fg3.made": Math.round(fg3Att * (0.28 + i * 0.015)), "fg3.attempted": fg3Att },
+      });
+    }
+  }
 
   // A few saved foods so the food picker has something in it.
   if ((await db.foods.count()) === 0) {

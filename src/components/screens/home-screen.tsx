@@ -10,10 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { WorkoutCard } from "@/components/workout-card";
-import { useActiveWorkout, useBulkOverview, useDashboardStats, useRoutines, useSettings, useWorkoutSummaries } from "@/hooks/use-data";
+import { SportCard, SportSessionDrawer, type SportTarget } from "@/components/sport-session";
+import { useActiveWorkout, useActivity, useBulkOverview, useDashboardStats, useRoutines, useSettings } from "@/hooks/use-data";
+import { SPORTS } from "@/lib/sports";
 import { loadDemoData, startWorkout } from "@/lib/db/repo";
 import { useNow } from "@/hooks/use-now";
-import { cn, formatDuration, formatNumber } from "@/lib/utils";
+import { cn, formatDuration, formatDurationShort, formatNumber } from "@/lib/utils";
 
 function greeting(now: number) {
   if (!now) return "Welcome back";
@@ -26,7 +28,8 @@ export function HomeScreen() {
   const active = useActiveWorkout();
   const stats = useDashboardStats();
   const routines = useRoutines();
-  const recent = useWorkoutSummaries(3);
+  const recent = useActivity(4);
+  const [sportTarget, setSportTarget] = React.useState<SportTarget>(null);
   const { unit } = useSettings();
   const hello = greeting(useNow(60_000));
 
@@ -83,7 +86,7 @@ export function HomeScreen() {
             })}
           </div>
           <div className="mt-4 grid grid-cols-3 divide-x divide-border/60 rounded-xl bg-background/40 py-3 text-center">
-            <Stat label="Workouts" value={stats?.weekCount ?? 0} />
+            <Stat label="Sessions" value={(stats?.weekCount ?? 0) + (stats?.weekSports ?? 0)} />
             <Stat label={`Volume (${unit})`} value={formatNumber(stats?.weekVolume ?? 0)} />
             <Stat label="Sets" value={stats?.weekSets ?? 0} />
           </div>
@@ -115,8 +118,33 @@ export function HomeScreen() {
       </section>
 
       <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <SectionTitle>Log a sport</SectionTitle>
+          {!!stats?.weekSports && (
+            <span className="text-xs text-muted-foreground tabular">
+              {formatDurationShort(stats.weekSportMinutes * 60000)} this week
+            </span>
+          )}
+        </div>
+        <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+          {SPORTS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSportTarget({ sport: s.id })}
+              className="flex w-[4.75rem] shrink-0 snap-start flex-col items-center gap-1.5 rounded-2xl border border-border/60 bg-card py-3 text-xs font-medium active:bg-accent/60"
+            >
+              <span className="text-2xl" aria-hidden>
+                {s.emoji}
+              </span>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <SectionTitle>Recent workouts</SectionTitle>
+          <SectionTitle>Recent activity</SectionTitle>
           {!!recent?.length && (
             <Link href="/history" className="flex items-center text-sm font-medium text-primary">
               See all <ChevronRight className="size-4" />
@@ -139,10 +167,20 @@ export function HomeScreen() {
             </Button>
           </EmptyState>
         )}
-        {recent?.map((s) => (
-          <WorkoutCard key={s.workout.id} summary={s} unit={unit} onClick={() => router.push(`/history?w=${s.workout.id}`)} />
-        ))}
+        {recent?.map((item) =>
+          item.type === "workout" ? (
+            <WorkoutCard
+              key={item.summary.workout.id}
+              summary={item.summary}
+              unit={unit}
+              onClick={() => router.push(`/history?w=${item.summary.workout.id}`)}
+            />
+          ) : (
+            <SportCard key={item.session.id} session={item.session} onClick={() => setSportTarget({ id: item.session.id })} />
+          ),
+        )}
       </section>
+      <SportSessionDrawer target={sportTarget} onClose={() => setSportTarget(null)} />
     </div>
   );
 }

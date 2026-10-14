@@ -181,7 +181,7 @@ function TodayCard({
         <Tile
           icon={<Dumbbell />}
           label="Training"
-          value={day.workouts > 0 ? "Workout logged" : day.trained ? "Trained" : "Rest day"}
+          value={day.workouts > 0 ? "Session logged" : day.trained ? "Trained" : "Rest day"}
           done={day.isTrainingDay}
           onClick={day.workouts > 0 ? undefined : () => updateDailyLog(day.date, { trained: !day.trained })}
         />
@@ -488,7 +488,7 @@ function DayForm({ day, settings, onDone, onAddFood }: { day: BulkDay; settings:
         <div className="flex items-center justify-between">
           <div>
             <Label htmlFor="trained">Training day</Label>
-            {day.workouts > 0 && <div className="text-xs text-muted-foreground">A workout is logged, so this day counts already</div>}
+            {day.workouts > 0 && <div className="text-xs text-muted-foreground">A workout or sport session is logged, so this day counts already</div>}
           </div>
           <Switch id="trained" checked={trained || day.workouts > 0} disabled={day.workouts > 0} onCheckedChange={setTrained} />
         </div>

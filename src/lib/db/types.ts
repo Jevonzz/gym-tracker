@@ -89,6 +89,28 @@ export interface FoodEntry {
   createdAt: number;
 }
 
+/** A non-gym session: basketball practice, a run, a badminton game. Sports are defined in `lib/sports.ts`. */
+export interface SportSession {
+  id: string;
+  /** Sport id from SPORTS, e.g. "basketball" */
+  sport: string;
+  /** Session type, e.g. "Shooting practice" or "Match" */
+  kind: string | null;
+  /** Own name for the session, mostly for the "Other" sport */
+  title?: string;
+  startedAt: number;
+  durationMin: number;
+  /** 1 (easy) to 5 (max), null if not rated */
+  effort: number | null;
+  /** In the sport's distance unit (km or m) */
+  distance: number | null;
+  drills: string[];
+  /** Flat stat values, see `statKey` in lib/sports.ts */
+  stats: Record<string, number>;
+  notes?: string;
+  createdAt: number;
+}
+
 export const emptyDailyLog = (date: string): DailyLog => ({ date, weight: null, protein: 0, gainer: 0, trained: false, updatedAt: 0 });
 
 export interface Settings {
@@ -128,7 +150,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export interface BackupFile {
   app: "gym-tracker";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   exportedAt: number;
   exercises: Exercise[];
   workouts: Workout[];
@@ -140,5 +162,7 @@ export interface BackupFile {
   /** Added in version 3 */
   foods?: Food[];
   foodEntries?: FoodEntry[];
+  /** Added in version 4 */
+  sportSessions?: SportSession[];
   settings: Settings;
 }
