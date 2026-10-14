@@ -189,7 +189,7 @@ export function SettingsScreen() {
             </Row>
           </>
         )}
-        <Row label="Gainer calories" hint="kcal per serving">
+        <Row label="Gainer calories" hint="kcal per serving (also editable when you log a shake)">
           <NumberField
             value={settings.gainerKcal || null}
             step={10}

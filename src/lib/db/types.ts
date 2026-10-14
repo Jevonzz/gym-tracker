@@ -108,6 +108,8 @@ export interface Settings {
   /** Calories and protein in one gainer serving, counted into the day's totals */
   gainerKcal: number;
   gainerProtein: number;
+  /** Your gainer's name, e.g. "Serious Mass", empty for the default label */
+  gainerName: string;
   /** Keep the screen on while a workout is in progress */
   keepAwake: boolean;
   /** Work out the protein and calorie targets from bodyweight and goal instead of the fixed values above */
@@ -126,6 +128,7 @@ export const DEFAULT_SETTINGS: Settings = {
   calorieTarget: null,
   gainerKcal: 0,
   gainerProtein: 0,
+  gainerName: "",
   autoTargets: true,
   keepAwake: true,
   trainingTypes: ["Push", "Pull", "Legs", "Upper", "Lower", "Full body", "Cardio", "Basketball"],

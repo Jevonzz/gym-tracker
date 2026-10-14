@@ -29,6 +29,7 @@ export function BulkScreen() {
   const [editing, setEditing] = React.useState<BulkDay | null>(null);
   const [editingGoal, setEditingGoal] = React.useState(false);
   const [addingFoodFor, setAddingFoodFor] = React.useState<string | null>(null);
+  const [addingGainer, setAddingGainer] = React.useState(false);
   const { goalWeight, unit } = settings;
 
   return (
@@ -51,6 +52,7 @@ export function BulkScreen() {
             targets={overview.targets}
             onEdit={() => setEditing(overview.today)}
             onAddFood={() => setAddingFoodFor(overview.today.date)}
+            onAddGainer={() => setAddingGainer(true)}
           />
           <WeekCard week={overview.week} proteinTarget={overview.targets.protein} onEdit={setEditing} />
           <TrendCard overview={overview} settings={settings} />
@@ -67,6 +69,11 @@ export function BulkScreen() {
         }}
       />
       <FoodDrawer date={addingFoodFor} onClose={() => setAddingFoodFor(null)} />
+      <GainerDrawer
+        date={addingGainer ? (overview?.today.date ?? null) : null}
+        settings={settings}
+        onClose={() => setAddingGainer(false)}
+      />
       <GoalEditor
         open={editingGoal}
         settings={settings}
@@ -160,12 +167,14 @@ function TodayCard({
   targets,
   onEdit,
   onAddFood,
+  onAddGainer,
 }: {
   day: BulkDay;
   settings: Settings;
   targets: DailyTargets;
   onEdit: () => void;
   onAddFood: () => void;
+  onAddGainer: () => void;
 }) {
   const { unit, gainerTarget } = settings;
   const { protein: proteinTarget, kcal: calorieTarget } = targets;
@@ -207,10 +216,14 @@ function TodayCard({
         <Tile
           className="col-span-2"
           icon={<CupSoda />}
-          label="Mass gainer"
-          value={`${formatNumber(day.gainer, 1)} / ${formatNumber(gainerTarget, 1)} servings`}
+          label={settings.gainerName || "Mass gainer"}
+          value={
+            `${formatNumber(day.gainer, 2)} / ${formatNumber(gainerTarget, 2)} servings` +
+            (gainerSetUp(settings) ? ` · ${formatNumber(day.gainer * settings.gainerKcal)} kcal` : " · tap to set calories")
+          }
           done={day.gainer >= gainerTarget}
           progress={day.gainer / gainerTarget}
+          onClick={onAddGainer}
         />
       </div>
       {targets.auto && (
@@ -225,14 +238,8 @@ function TodayCard({
         <Button variant="outline" onClick={() => addIntake(day.date, { protein: PROTEIN_STEP })}>
           <Plus /> {PROTEIN_STEP} g protein
         </Button>
-        <Button
-          variant="outline"
-          onClick={async () => {
-            await addIntake(day.date, { gainer: 1 });
-            toast.success("Mass gainer logged");
-          }}
-        >
-          <Plus /> 1 gainer shake
+        <Button variant="outline" onClick={onAddGainer}>
+          <Plus /> Gainer shake
         </Button>
       </div>
       <FoodEntryList entries={day.entries} />
@@ -477,13 +484,13 @@ function DayForm({ day, settings, onDone, onAddFood }: { day: BulkDay; settings:
           <FoodEntryList entries={day.entries} />
         </div>
         <div className="flex items-center justify-between">
-          <Label>Mass gainer servings</Label>
+          <Label>{settings.gainerName || "Mass gainer"} servings</Label>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" size="icon-sm" aria-label="Less" onClick={() => setGainer((g) => Math.max(0, g - 0.5))}>
+            <Button variant="secondary" size="icon-sm" aria-label="Less" onClick={() => setGainer((g) => Math.max(0, g - 0.25))}>
               <Minus />
             </Button>
-            <span className="w-8 text-center font-semibold tabular">{formatNumber(gainer, 1)}</span>
-            <Button variant="secondary" size="icon-sm" aria-label="More" onClick={() => setGainer((g) => g + 0.5)}>
+            <span className="w-10 text-center font-semibold tabular">{formatNumber(gainer, 2)}</span>
+            <Button variant="secondary" size="icon-sm" aria-label="More" onClick={() => setGainer((g) => g + 0.25)}>
               <Plus />
             </Button>
           </div>
@@ -839,5 +846,107 @@ function FoodRow({
         {formatNumber(protein)} g protein
       </span>
     </button>
+  );
+}
+
+const gainerSetUp = (s: Settings) => s.gainerKcal > 0 || s.gainerProtein > 0;
+
+const GAINER_PORTIONS = [
+  { value: 0.25, label: "¼" },
+  { value: 0.5, label: "½" },
+  { value: 0.75, label: "¾" },
+  { value: 1, label: "1" },
+  { value: 1.5, label: "1½" },
+  { value: 2, label: "2" },
+];
+
+function GainerDrawer({ date, settings, onClose }: { date: string | null; settings: Settings; onClose: () => void }) {
+  return (
+    <Drawer open={!!date} onOpenChange={(o) => !o && onClose()}>
+      <DrawerContent>{date && <GainerForm date={date} settings={settings} onDone={onClose} />}</DrawerContent>
+    </Drawer>
+  );
+}
+
+/** Log a gainer shake by portion. The shake's calories and protein per serving are editable here, since every brand differs. */
+function GainerForm({ date, settings, onDone }: { date: string; settings: Settings; onDone: () => void }) {
+  const [portion, setPortion] = React.useState(1);
+  const [editing, setEditing] = React.useState(!gainerSetUp(settings));
+  const [name, setName] = React.useState(settings.gainerName);
+  const [kcal, setKcal] = React.useState(settings.gainerKcal ? String(settings.gainerKcal) : "");
+  const [protein, setProtein] = React.useState(settings.gainerProtein ? String(settings.gainerProtein) : "");
+  const k = Math.max(0, parseFloat(kcal) || 0);
+  const p = Math.max(0, parseFloat(protein.replace(",", ".")) || 0);
+  const label = name.trim() || "Mass gainer";
+
+  async function log() {
+    if (k !== settings.gainerKcal || p !== settings.gainerProtein || name.trim() !== settings.gainerName) {
+      await updateSettings({ gainerKcal: Math.round(k), gainerProtein: Math.round(p * 10) / 10, gainerName: name.trim() });
+    }
+    await addIntake(date, { gainer: portion });
+    toast.success(`${GAINER_PORTIONS.find((x) => x.value === portion)?.label ?? portion} ${label} logged`, {
+      description: k || p ? `${formatNumber(k * portion)} kcal · ${formatNumber(p * portion)} g protein` : undefined,
+    });
+    onDone();
+  }
+
+  return (
+    <>
+      <DrawerHeader>
+        <DrawerTitle>{label}</DrawerTitle>
+        <DrawerDescription>
+          {k || p ? `${formatNumber(k)} kcal · ${formatNumber(p, 1)} g protein per serving` : "Add your shake's calories and protein so they count toward today."}
+        </DrawerDescription>
+      </DrawerHeader>
+      <div className="space-y-4 px-4">
+        <div className="space-y-1.5">
+          <Label>How much?</Label>
+          <div className="grid grid-cols-6 gap-1.5">
+            {GAINER_PORTIONS.map((x) => (
+              <button
+                key={x.value}
+                type="button"
+                aria-pressed={portion === x.value}
+                onClick={() => setPortion(x.value)}
+                className={cn(
+                  "h-11 rounded-xl border border-border text-base font-semibold text-muted-foreground active:scale-[0.97]",
+                  portion === x.value && "border-primary bg-primary text-primary-foreground",
+                )}
+              >
+                {x.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Servings. One serving is what your tub&apos;s label says.</p>
+        </div>
+        {editing ? (
+          <div className="space-y-3 rounded-xl bg-muted/50 p-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="g-name">Name</Label>
+              <Input id="g-name" placeholder="e.g. Serious Mass" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="g-kcal">kcal per serving</Label>
+                <Input id="g-kcal" inputMode="numeric" placeholder="e.g. 1250" value={kcal} onChange={(e) => setKcal(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="g-protein">Protein (g)</Label>
+                <Input id="g-protein" inputMode="decimal" placeholder="e.g. 50" value={protein} onChange={(e) => setProtein(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="text-sm font-medium text-primary" onClick={() => setEditing(true)}>
+            Change shake or values
+          </button>
+        )}
+      </div>
+      <DrawerFooter>
+        <Button size="lg" onClick={log}>
+          Log {formatNumber(k * portion)} kcal · {formatNumber(p * portion)} g protein
+        </Button>
+      </DrawerFooter>
+    </>
   );
 }
