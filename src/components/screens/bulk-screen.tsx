@@ -141,6 +141,7 @@ function GoalCard({ overview, settings, onSetGoal }: { overview: BulkOverview; s
             )}
           </div>
         </div>
+        <PaceCheck rate={ratePerWeek} current={currentWeight} goal={goal} unit={unit} />
         {goal != null && (
           <div className="mt-4">
             <div className="h-2.5 overflow-hidden rounded-full bg-muted">
@@ -948,5 +949,46 @@ function GainerForm({ date, settings, onDone }: { date: string; settings: Settin
         </Button>
       </DrawerFooter>
     </>
+  );
+}
+
+/**
+ * Lean bulk pace: about 0.25–0.5 kg a week (0.5–1 lb). With a goal below you it checks a cut
+ * instead (0.25–0.75 kg a week down). The calorie nudge uses ~7700 kcal per kg, rounded and
+ * capped, since it is a nudge rather than a prescription.
+ */
+function PaceCheck({ rate, current, goal, unit }: { rate: number | null; current: number; goal: number | null; unit: Settings["unit"] }) {
+  if (rate == null) return null;
+  const perKg = unit === "lb" ? 0.45359237 : 1;
+  const cutting = goal != null && goal < current - 0.5 / perKg;
+  const [lo, hi] = (cutting ? [-0.75, -0.25] : [0.25, 0.5]).map((v) => v / perKg);
+  const status = rate < lo ? "slow" : rate > hi ? "fast" : "ok";
+  const target = (lo + hi) / 2;
+  const kcal = Math.min(500, Math.max(100, Math.round((Math.abs(target - rate) * perKg * 7700) / 7 / 50) * 50));
+  const range = `${formatNumber(Math.abs(lo), 2)}–${formatNumber(Math.abs(hi), 2)} ${unit}/week`;
+  const text =
+    status === "ok"
+      ? `Right in the ${cutting ? "steady cut" : "lean bulk"} range (${range}). Keep it up.`
+      : cutting
+        ? status === "slow"
+          ? `Losing too fast for a steady cut (aim ${range} down). Try about ${kcal} kcal more a day.`
+          : `Not losing much yet (aim ${range} down). Try about ${kcal} kcal less a day.`
+        : status === "slow"
+          ? `Gaining slower than a lean bulk (aim ${range}). Try about ${kcal} kcal more a day.`
+          : `Gaining faster than a lean bulk (aim ${range}), likely extra fat. Try about ${kcal} kcal less a day.`;
+  return (
+    <div
+      className={cn(
+        "mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-xs",
+        status === "ok" ? "bg-primary/15 text-foreground" : "bg-amber-400/15 text-foreground",
+      )}
+    >
+      <span className={cn("mt-0.5 size-2 shrink-0 rounded-full", status === "ok" ? "bg-primary" : "bg-amber-400")} />
+      <span>
+        <span className="font-semibold">{status === "ok" ? "On pace" : status === "slow" ? (cutting ? "Too fast" : "Too slow") : cutting ? "Too slow" : "Too fast"}</span>
+        {" · "}
+        {text}
+      </span>
+    </div>
   );
 }
