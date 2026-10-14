@@ -17,12 +17,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Segmented } from "@/components/ui/segmented";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { WorkoutCard } from "@/components/workout-card";
-import { SportCard, SportSessionDrawer } from "@/components/sport-session";
-import { useActivity, useSettings, useWorkoutDetail } from "@/hooks/use-data";
+import { useSettings, useWorkoutDetail, useWorkoutSummaries } from "@/hooks/use-data";
 import { NumberCell } from "@/components/screens/workout-screen";
 import { addLoggedSet, deleteWorkout, recomputePRs, removeLoggedSet, updateSet } from "@/lib/db/repo";
 import { e1rm, formatDurationShort, formatNumber } from "@/lib/utils";
@@ -31,61 +29,37 @@ export function HistoryScreen() {
   const router = useRouter();
   const params = useSearchParams();
   const openId = params.get("w");
-  const openSportId = params.get("s");
-  const activity = useActivity();
+  const summaries = useWorkoutSummaries();
   const { unit } = useSettings();
-  const [filter, setFilter] = React.useState<"all" | "gym" | "sport">("all");
 
-  const shown = React.useMemo(
-    () => (activity ?? []).filter((a) => filter === "all" || (filter === "gym" ? a.type === "workout" : a.type === "sport")),
-    [activity, filter],
-  );
   const groups = React.useMemo(() => {
-    const map = new Map<string, typeof shown>();
-    for (const a of shown) {
-      const key = new Date(a.at).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-      map.set(key, [...(map.get(key) ?? []), a]);
+    const map = new Map<string, NonNullable<typeof summaries>>();
+    for (const s of summaries ?? []) {
+      const key = new Date(s.workout.startedAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      map.set(key, [...(map.get(key) ?? []), s]);
     }
     return [...map.entries()];
-  }, [shown]);
+  }, [summaries]);
 
-  const setOpen = (param: "w" | "s", id: string | null) => router.replace(id ? `/history?${param}=${id}` : "/history", { scroll: false });
-  const hasSports = activity?.some((a) => a.type === "sport");
+  const setOpen = (id: string | null) => router.replace(id ? `/history?w=${id}` : "/history", { scroll: false });
 
   return (
     <div className="space-y-5">
-      <PageHeader title="History" subtitle={activity ? `${shown.length} sessions logged` : " "} />
-      {hasSports && (
-        <Segmented
-          className="w-full"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "gym", label: "Gym" },
-            { value: "sport", label: "Sports" },
-          ]}
-        />
-      )}
-      {activity?.length === 0 && (
-        <EmptyState icon={<CalendarDays />} title="Nothing logged yet">
-          Finished workouts and sport sessions show up here.
+      <PageHeader title="History" subtitle={summaries ? `${summaries.length} workouts logged` : " "} />
+      {summaries?.length === 0 && (
+        <EmptyState icon={<CalendarDays />} title="No workouts yet">
+          Finished workouts show up here.
         </EmptyState>
       )}
       {groups.map(([month, items]) => (
         <section key={month} className="space-y-3">
           <h2 className="text-sm font-semibold text-muted-foreground">{month}</h2>
-          {items.map((a) =>
-            a.type === "workout" ? (
-              <WorkoutCard key={a.summary.workout.id} summary={a.summary} unit={unit} onClick={() => setOpen("w", a.summary.workout.id)} />
-            ) : (
-              <SportCard key={a.session.id} session={a.session} onClick={() => setOpen("s", a.session.id)} />
-            ),
-          )}
+          {items.map((s) => (
+            <WorkoutCard key={s.workout.id} summary={s} unit={unit} onClick={() => setOpen(s.workout.id)} />
+          ))}
         </section>
       ))}
-      <WorkoutDetailDrawer id={openId} onClose={() => setOpen("w", null)} />
-      <SportSessionDrawer target={openSportId ? { id: openSportId } : null} onClose={() => setOpen("s", null)} />
+      <WorkoutDetailDrawer id={openId} onClose={() => setOpen(null)} />
     </div>
   );
 }

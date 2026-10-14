@@ -13,6 +13,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { BodyweightChart } from "@/components/charts";
+import { TrainingPicker } from "@/components/training-picker";
 import { useBulkOverview, useFoods, useSettings } from "@/hooks/use-data";
 import { autoTargets, type BulkDay, type BulkOverview, type DailyTargets } from "@/lib/db/queries";
 import { addIntake, deleteDailyLog, deleteFood, deleteFoodEntry, logFood, saveFood, updateDailyLog, updateSettings } from "@/lib/db/repo";
@@ -181,9 +182,9 @@ function TodayCard({
         <Tile
           icon={<Dumbbell />}
           label="Training"
-          value={day.workouts > 0 ? "Session logged" : day.trained ? "Trained" : "Rest day"}
+          value={day.trainedAs?.length ? day.trainedAs.join(", ") : day.workouts > 0 ? "Workout logged" : day.trained ? "Trained" : "Rest day"}
           done={day.isTrainingDay}
-          onClick={day.workouts > 0 ? undefined : () => updateDailyLog(day.date, { trained: !day.trained })}
+          onClick={day.workouts > 0 ? undefined : () => updateDailyLog(day.date, day.trained ? { trained: false, trainedAs: [] } : { trained: true })}
         />
         <Tile
           icon={<Flame />}
@@ -383,7 +384,7 @@ function HistoryList({ history, settings, onEdit }: { history: BulkDay[]; settin
             <div className="flex-1 text-xs text-muted-foreground tabular">
               {d.totalKcal > 0 && `${formatNumber(d.totalKcal)} kcal · `}
               {formatNumber(d.totalProtein)} g protein · {formatNumber(d.gainer, 1)} gainer
-              {d.isTrainingDay && <span className="ml-1.5 text-primary">· trained</span>}
+              {d.isTrainingDay && <span className="ml-1.5 text-primary">· {d.trainedAs?.length ? d.trainedAs.join(", ") : "trained"}</span>}
             </div>
             <div className="text-sm font-semibold tabular">{d.weight == null ? "—" : `${formatNumber(d.weight, 1)} ${settings.unit}`}</div>
           </button>
@@ -423,6 +424,7 @@ function DayForm({ day, settings, onDone, onAddFood }: { day: BulkDay; settings:
   const [protein, setProtein] = React.useState(String(day.protein || ""));
   const [gainer, setGainer] = React.useState(day.gainer);
   const [trained, setTrained] = React.useState(day.trained);
+  const [trainedAs, setTrainedAs] = React.useState(day.trainedAs ?? []);
 
   async function save() {
     const w = parseFloat(weight.replace(",", "."));
@@ -431,7 +433,8 @@ function DayForm({ day, settings, onDone, onAddFood }: { day: BulkDay; settings:
       weight: Number.isFinite(w) && w > 0 ? Math.round(w * 10) / 10 : null,
       protein: Number.isFinite(p) && p > 0 ? Math.round(p) : 0,
       gainer,
-      trained,
+      trained: trained || trainedAs.length > 0,
+      trainedAs: trained ? trainedAs : [],
     });
     toast.success("Saved");
     onDone();
@@ -488,10 +491,23 @@ function DayForm({ day, settings, onDone, onAddFood }: { day: BulkDay; settings:
         <div className="flex items-center justify-between">
           <div>
             <Label htmlFor="trained">Training day</Label>
-            {day.workouts > 0 && <div className="text-xs text-muted-foreground">A workout or sport session is logged, so this day counts already</div>}
+            {day.workouts > 0 && <div className="text-xs text-muted-foreground">A workout is logged, so this day counts already</div>}
           </div>
-          <Switch id="trained" checked={trained || day.workouts > 0} disabled={day.workouts > 0} onCheckedChange={setTrained} />
+          <Switch id="trained" checked={trained || day.workouts > 0} disabled={day.workouts > 0}
+            onCheckedChange={(on) => {
+              setTrained(on);
+              if (!on) setTrainedAs([]);
+            }}
+          />
         </div>
+        <TrainingPicker
+          value={trainedAs}
+          onToggle={(t) => {
+            const next = trainedAs.includes(t) ? trainedAs.filter((x) => x !== t) : [...trainedAs, t];
+            setTrainedAs(next);
+            if (next.length) setTrained(true);
+          }}
+        />
       </div>
       <DrawerFooter className="flex-row">
         {day.updatedAt > 0 && (

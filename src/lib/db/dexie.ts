@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 
-import type { DailyLog, Exercise, Food, FoodEntry, Routine, SetEntry, SportSession, Workout, WorkoutExercise } from "./types";
+import type { DailyLog, Exercise, Food, FoodEntry, Routine, SetEntry, Workout, WorkoutExercise } from "./types";
 
 export interface KV {
   key: string;
@@ -21,7 +21,6 @@ export const db = new Dexie("gym-tracker") as Dexie & {
   dailyLogs: EntityTable<DailyLog, "date">;
   foods: EntityTable<Food, "id">;
   foodEntries: EntityTable<FoodEntry, "id">;
-  sportSessions: EntityTable<SportSession, "id">;
 };
 
 db.version(1).stores({
@@ -35,4 +34,3 @@ db.version(1).stores({
 
 db.version(2).stores({ dailyLogs: "date" });
 db.version(3).stores({ foods: "id, name", foodEntries: "id, date" });
-db.version(4).stores({ sportSessions: "id, startedAt, sport" });

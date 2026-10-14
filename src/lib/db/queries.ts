@@ -8,12 +8,10 @@ import {
   type Settings,
   type Exercise,
   type SetEntry,
-  type SportSession,
   type Workout,
   type WorkoutExercise,
 } from "./types";
 import { addDays, dayKey, e1rm, parseDayKey, startOfWeek } from "@/lib/utils";
-import { getSport, ratio } from "@/lib/sports";
 
 export async function getActiveWorkout() {
   return (await db.workouts.filter((w) => w.endedAt === null).first()) ?? null;
@@ -102,18 +100,21 @@ export async function getWorkoutSummaries(limit?: number): Promise<WorkoutSummar
 
 export async function getDashboardStats(todayKey = dayKey()) {
   const weekStart = startOfWeek(parseDayKey(todayKey)).getTime();
-  const [finished, sports] = await Promise.all([db.workouts.filter((w) => w.endedAt !== null).toArray(), db.sportSessions.toArray()]);
+  const [finished, trainedLogs] = await Promise.all([
+    db.workouts.filter((w) => w.endedAt !== null).toArray(),
+    db.dailyLogs.filter((l) => l.trained).toArray(),
+  ]);
   const thisWeek = finished.filter((w) => w.startedAt >= weekStart);
-  const sportsThisWeek = sports.filter((s) => s.startedAt >= weekStart);
-  const sessionStarts = [...finished.map((w) => w.startedAt), ...sports.map((s) => s.startedAt)];
+  // A day counts as trained with a finished workout or a one-tap "trained" mark.
+  const trainedStarts = [...finished.map((w) => w.startedAt), ...trainedLogs.map((l) => parseDayKey(l.date).getTime())];
   const weekSets = await db.sets
     .where("workoutId")
     .anyOf(thisWeek.map((w) => w.id))
     .filter((s) => s.completed)
     .toArray();
 
-  // Weekly streak: consecutive weeks (ending this or last week) with at least one workout or sport session.
-  const weeks = new Set(sessionStarts.map((t) => startOfWeek(new Date(t)).getTime()));
+  // Weekly streak: consecutive weeks (ending this or last week) with at least one training day.
+  const weeks = new Set(trainedStarts.map((t) => startOfWeek(new Date(t)).getTime()));
   let streak = 0;
   const cursor = new Date(weekStart);
   if (!weeks.has(cursor.getTime())) cursor.setDate(cursor.getDate() - 7);
@@ -127,14 +128,13 @@ export async function getDashboardStats(todayKey = dayKey()) {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + i);
     const next = d.getTime() + 86400000;
-    return { date: d, trained: sessionStarts.some((t) => t >= d.getTime() && t < next) };
+    return { date: d, trained: trainedStarts.some((t) => t >= d.getTime() && t < next) };
   });
 
   return {
-    total: finished.length + sports.length,
+    total: finished.length,
     weekCount: thisWeek.length,
-    weekSports: sportsThisWeek.length,
-    weekSportMinutes: sportsThisWeek.reduce((m, s) => m + s.durationMin, 0),
+    weekTrainedDays: days.filter((d) => d.trained).length,
     weekVolume: weekSets.reduce((v, s) => v + (s.weight ?? 0) * (s.reps ?? 0), 0),
     weekSets: weekSets.length,
     streak,
@@ -258,7 +258,7 @@ export async function getRoutines() {
 /* ---------------------------------- bulk log --------------------------------- */
 
 export interface BulkDay extends DailyLog {
-  /** Finished workouts and sport sessions started that day */
+  /** Finished workouts started that day */
   workouts: number;
   /** Logged workout or marked by hand */
   isTrainingDay: boolean;
@@ -318,10 +318,9 @@ export function autoTargets(weight: number, goal: number | null, unit: Settings[
 }
 
 export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview> {
-  const [logs, workouts, sports, entries, settingsRow] = await Promise.all([
+  const [logs, workouts, entries, settingsRow] = await Promise.all([
     db.dailyLogs.orderBy("date").toArray(),
     db.workouts.toArray(),
-    db.sportSessions.toArray(),
     db.foodEntries.toArray(),
     db.kv.get("settings"),
   ]);
@@ -336,10 +335,6 @@ export async function getBulkOverview(todayKey = dayKey()): Promise<BulkOverview
   for (const w of workouts) {
     if (w.endedAt === null) continue;
     const k = dayKey(w.startedAt);
-    workoutsByDay.set(k, (workoutsByDay.get(k) ?? 0) + 1);
-  }
-  for (const sp of sports) {
-    const k = dayKey(sp.startedAt);
     workoutsByDay.set(k, (workoutsByDay.get(k) ?? 0) + 1);
   }
   const logByDay = new Map(logs.map((l) => [l.date, l]));
@@ -413,72 +408,4 @@ function weeklyRate(points: WeighIn[]) {
 
 export async function getFoods() {
   return db.foods.orderBy("name").toArray();
-}
-
-/* ----------------------------------- sports ---------------------------------- */
-
-export async function getSportSession(id: string) {
-  return (await db.sportSessions.get(id)) ?? null;
-}
-
-export async function getSportSessions(limit?: number) {
-  let coll = db.sportSessions.orderBy("startedAt").reverse();
-  if (limit) coll = coll.limit(limit);
-  return coll.toArray();
-}
-
-export type ActivityItem = { type: "workout"; at: number; summary: WorkoutSummary } | { type: "sport"; at: number; session: SportSession };
-
-/** Gym workouts and sport sessions together, newest first. */
-export async function getActivity(limit?: number): Promise<ActivityItem[]> {
-  const [workouts, sports] = await Promise.all([getWorkoutSummaries(limit), getSportSessions(limit)]);
-  const items: ActivityItem[] = [
-    ...workouts.map((summary) => ({ type: "workout" as const, at: summary.workout.startedAt, summary })),
-    ...sports.map((session) => ({ type: "sport" as const, at: session.startedAt, session })),
-  ].sort((a, b) => b.at - a.at);
-  return limit ? items.slice(0, limit) : items;
-}
-
-export interface SportProgress {
-  sport: string;
-  sessions: number;
-  minutes: number;
-  /** Sessions in the last 30 days */
-  recent: number;
-  /** Totals and per-session trend for every made/attempted stat that has data */
-  ratios: { key: string; label: string; made: number; total: number; pct: number; trend: { at: number; pct: number }[] }[];
-}
-
-/** Per-sport totals and shooting-style percentages, most played sport first. */
-export async function getSportProgress(now: number): Promise<SportProgress[]> {
-  const sessions = await db.sportSessions.orderBy("startedAt").toArray();
-  const bySport = new Map<string, SportSession[]>();
-  for (const s of sessions) bySport.set(s.sport, [...(bySport.get(s.sport) ?? []), s]);
-  const since = now - 30 * 86400000;
-  return [...bySport.entries()]
-    .map(([sport, list]) => {
-      const def = getSport(sport);
-      const ratios = def.stats.flatMap((stat) => {
-        if (stat.type !== "ratio") return [];
-        const trend: { at: number; pct: number }[] = [];
-        let made = 0;
-        let total = 0;
-        for (const s of list) {
-          const r = ratio(s.stats, stat);
-          if (!r) continue;
-          made += r.made;
-          total += r.total;
-          trend.push({ at: s.startedAt, pct: r.pct });
-        }
-        return total ? [{ key: stat.key, label: stat.label, made, total, pct: Math.round((made / total) * 100), trend }] : [];
-      });
-      return {
-        sport,
-        sessions: list.length,
-        minutes: list.reduce((m, s) => m + s.durationMin, 0),
-        recent: list.filter((s) => s.startedAt >= since).length,
-        ratios,
-      };
-    })
-    .sort((a, b) => b.sessions - a.sessions);
 }

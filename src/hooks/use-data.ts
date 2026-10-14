@@ -6,7 +6,6 @@ import * as q from "@/lib/db/queries";
 import { getSettings } from "@/lib/db/repo";
 import { useToday } from "@/hooks/use-now";
 import { DEFAULT_SETTINGS } from "@/lib/db/types";
-import { parseDayKey } from "@/lib/utils";
 
 /** Live (auto-updating) views over the local database. `undefined` means still loading. */
 export const useActiveWorkout = () => useLiveQuery(q.getActiveWorkout);
@@ -26,11 +25,5 @@ export const useBulkOverview = () => {
   return useLiveQuery(() => (today ? q.getBulkOverview(today) : undefined), [today]);
 };
 export const useFoods = () => useLiveQuery(q.getFoods);
-export const useActivity = (limit?: number) => useLiveQuery(() => q.getActivity(limit), [limit]);
-export const useSportSession = (id: string | null | undefined) => useLiveQuery(() => (id ? q.getSportSession(id) : null), [id]);
-export const useSportProgress = () => {
-  const today = useToday();
-  return useLiveQuery(() => (today ? q.getSportProgress(parseDayKey(today).getTime()) : undefined), [today]);
-};
 export const useRoutines = () => useLiveQuery(q.getRoutines);
 export const useSettings = () => useLiveQuery(getSettings) ?? DEFAULT_SETTINGS;

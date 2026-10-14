@@ -3,19 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Flame, Play, Plus, Scale, Settings, Sparkles } from "lucide-react";
-import { toast } from "sonner";
+import { Check, ChevronRight, Dumbbell, Flame, Scale, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { EmptyState, PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { TrainingPicker } from "@/components/training-picker";
 import { WorkoutCard } from "@/components/workout-card";
-import { SportCard, SportSessionDrawer, type SportTarget } from "@/components/sport-session";
-import { useActiveWorkout, useActivity, useBulkOverview, useDashboardStats, useRoutines, useSettings } from "@/hooks/use-data";
-import { SPORTS } from "@/lib/sports";
-import { loadDemoData, startWorkout } from "@/lib/db/repo";
+import { useActiveWorkout, useBulkOverview, useDashboardStats, useSettings, useWorkoutSummaries } from "@/hooks/use-data";
+import { toggleTrainingType } from "@/lib/db/repo";
 import { useNow } from "@/hooks/use-now";
-import { cn, formatDuration, formatDurationShort, formatNumber } from "@/lib/utils";
+import { cn, formatDuration, formatNumber } from "@/lib/utils";
 
 function greeting(now: number) {
   if (!now) return "Welcome back";
@@ -27,22 +25,15 @@ export function HomeScreen() {
   const router = useRouter();
   const active = useActiveWorkout();
   const stats = useDashboardStats();
-  const routines = useRoutines();
-  const recent = useActivity(4);
-  const [sportTarget, setSportTarget] = React.useState<SportTarget>(null);
+  const recent = useWorkoutSummaries(3);
   const { unit } = useSettings();
   const hello = greeting(useNow(60_000));
-
-  async function start(routineId?: string) {
-    await startWorkout({ routineId });
-    router.push("/workout");
-  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         subtitle={hello}
-        title="Let's train"
+        title="Today"
         action={
           <Button asChild variant="secondary" size="icon" aria-label="Settings">
             <Link href="/settings">
@@ -55,6 +46,8 @@ export function HomeScreen() {
       {active && <ActiveBanner startedAt={active.startedAt} name={active.name} />}
 
       <BulkBanner />
+
+      <TrainedToday />
 
       <Card className="overflow-hidden p-0">
         <div className="bg-gradient-to-br from-primary/15 via-transparent to-transparent p-4">
@@ -85,103 +78,55 @@ export function HomeScreen() {
               );
             })}
           </div>
-          <div className="mt-4 grid grid-cols-3 divide-x divide-border/60 rounded-xl bg-background/40 py-3 text-center">
-            <Stat label="Sessions" value={(stats?.weekCount ?? 0) + (stats?.weekSports ?? 0)} />
-            <Stat label={`Volume (${unit})`} value={formatNumber(stats?.weekVolume ?? 0)} />
-            <Stat label="Sets" value={stats?.weekSets ?? 0} />
+          <div className="mt-4 text-center text-sm text-muted-foreground tabular">
+            <span className="font-semibold text-foreground">{stats?.weekTrainedDays ?? 0}</span> of 7 days trained
           </div>
         </div>
       </Card>
 
-      <section className="space-y-3">
-        <SectionTitle>Start a workout</SectionTitle>
-        {!active && (
-          <Button size="lg" className="h-14 w-full rounded-2xl text-base" onClick={() => start()}>
-            <Plus className="size-5" /> Start empty workout
-          </Button>
-        )}
-        {routines && routines.length > 0 && (
-          <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-            {routines.map((r) => (
-              <Card key={r.id} className="flex w-56 shrink-0 snap-start flex-col gap-3 p-4">
-                <div>
-                  <div className="font-semibold">{r.name}</div>
-                  <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{r.exercises.map((e) => e.name).join(" · ")}</div>
-                </div>
-                <Button variant="secondary" size="sm" className="mt-auto" disabled={!!active} onClick={() => start(r.id)}>
-                  <Play /> Start routine
-                </Button>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <SectionTitle>Log a sport</SectionTitle>
-          {!!stats?.weekSports && (
-            <span className="text-xs text-muted-foreground tabular">
-              {formatDurationShort(stats.weekSportMinutes * 60000)} this week
-            </span>
-          )}
-        </div>
-        <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-          {SPORTS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSportTarget({ sport: s.id })}
-              className="flex w-[4.75rem] shrink-0 snap-start flex-col items-center gap-1.5 rounded-2xl border border-border/60 bg-card py-3 text-xs font-medium active:bg-accent/60"
-            >
-              <span className="text-2xl" aria-hidden>
-                {s.emoji}
-              </span>
-              {s.name}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <SectionTitle>Recent activity</SectionTitle>
-          {!!recent?.length && (
+      {!!recent?.length && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <SectionTitle>Recent workouts</SectionTitle>
             <Link href="/history" className="flex items-center text-sm font-medium text-primary">
               See all <ChevronRight className="size-4" />
             </Link>
-          )}
-        </div>
-        {recent?.length === 0 && stats?.total === 0 && (
-          <EmptyState icon={<Sparkles />} title="No workouts yet">
-            <p>Start your first workout above, or load sample data to explore the app.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={async () => {
-                await loadDemoData();
-                toast.success("Sample workouts added");
-              }}
-            >
-              Load sample data
-            </Button>
-          </EmptyState>
-        )}
-        {recent?.map((item) =>
-          item.type === "workout" ? (
-            <WorkoutCard
-              key={item.summary.workout.id}
-              summary={item.summary}
-              unit={unit}
-              onClick={() => router.push(`/history?w=${item.summary.workout.id}`)}
-            />
-          ) : (
-            <SportCard key={item.session.id} session={item.session} onClick={() => setSportTarget({ id: item.session.id })} />
-          ),
-        )}
-      </section>
-      <SportSessionDrawer target={sportTarget} onClose={() => setSportTarget(null)} />
+          </div>
+          {recent.map((s) => (
+            <WorkoutCard key={s.workout.id} summary={s} unit={unit} onClick={() => router.push(`/history?w=${s.workout.id}`)} />
+          ))}
+        </section>
+      )}
     </div>
+  );
+}
+
+/** One-tap training log for today: tick what you did, no sets needed. */
+function TrainedToday() {
+  const bulk = useBulkOverview();
+  if (!bulk) return null;
+  const today = bulk.today;
+  const types = today.trainedAs ?? [];
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle>Trained today?</SectionTitle>
+        <span className={cn("text-sm text-muted-foreground", today.isTrainingDay && "font-semibold text-primary")}>
+          {today.isTrainingDay ? (
+            <span className="flex items-center gap-1">
+              <Check className="size-4" /> {today.workouts > 0 && !types.length ? "Workout logged" : "Done"}
+            </span>
+          ) : (
+            "Rest day"
+          )}
+        </span>
+      </div>
+      <TrainingPicker value={types} onToggle={(t) => toggleTrainingType(today.date, t)} />
+      <Link href="/workout" className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        <Dumbbell className="size-3.5" /> Want to track sets and weights? Start a full workout
+        <ChevronRight className="size-3.5" />
+      </Link>
+    </Card>
   );
 }
 
@@ -236,15 +181,6 @@ function BulkBanner() {
       </div>
       <ChevronRight className="size-5 text-muted-foreground" />
     </Link>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-xl font-bold tabular">{value}</div>
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-    </div>
   );
 }
 
