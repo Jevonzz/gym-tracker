@@ -11,8 +11,15 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: { default: "Lift — Gym Tracker", template: "%s · Lift" },
-  description: "Log workouts, track PRs and see your progress. Works offline.",
+  description: "Track your weight, food and training. Works offline.",
   applicationName: "Lift",
+  openGraph: {
+    title: "Lift",
+    description: "Bulk tracker & training log. Track your weight, food and training.",
+    siteName: "Lift",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image", title: "Lift", description: "Bulk tracker & training log." },
   appleWebApp: { capable: true, title: "Lift", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
 };
